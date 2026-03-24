@@ -24,6 +24,18 @@ pub fn apply_filter(
         "sanitize" => filter_sanitize(input),
         "ext" => filter_ext(input),
         "basename" => filter_basename(input),
+        "urlencode" => filter_urlencode(input),
+        "urldecode" => filter_urldecode(input),
+        "abs" => filter_abs(input),
+        "round" => filter_round(input),
+        "ceil" => filter_ceil(input),
+        "floor" => filter_floor(input),
+        "string" | "str" => filter_string(input),
+        "int" => filter_int(input),
+        "float" => filter_float(input),
+        "reverse" => filter_reverse(input),
+        "unique" => filter_unique(input),
+        "split" => filter_split(input, args),
         _ => Err(CliError::pipeline(format!("Unknown filter: {name}"))),
     }
 }
@@ -221,6 +233,170 @@ fn filter_basename(input: Value) -> Result<Value, CliError> {
                 .next()
                 .unwrap_or(&s);
             Value::String(name.to_string())
+        }
+        other => other,
+    })
+}
+
+fn filter_urlencode(input: Value) -> Result<Value, CliError> {
+    let s = match &input {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    // Percent-encode all non-unreserved characters per RFC 3986
+    let encoded: String = s.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+            format!("{}", b as char)
+        }
+        _ => format!("%{:02X}", b),
+    }).collect();
+    Ok(Value::String(encoded))
+}
+
+fn filter_urldecode(input: Value) -> Result<Value, CliError> {
+    let s = match &input {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let mut result = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(val) = u8::from_str_radix(
+                &s[i + 1..i + 3], 16
+            ) {
+                result.push(val);
+                i += 3;
+                continue;
+            }
+        }
+        if bytes[i] == b'+' {
+            result.push(b' ');
+        } else {
+            result.push(bytes[i]);
+        }
+        i += 1;
+    }
+    Ok(Value::String(String::from_utf8_lossy(&result).to_string()))
+}
+
+fn filter_abs(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Number(i.abs().into())
+            } else if let Some(f) = n.as_f64() {
+                Value::Number(serde_json::Number::from_f64(f.abs()).unwrap_or(n))
+            } else {
+                Value::Number(n)
+            }
+        }
+        other => other,
+    })
+}
+
+fn filter_round(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                Value::Number(serde_json::Number::from_f64(f.round()).unwrap_or(n))
+            } else {
+                Value::Number(n)
+            }
+        }
+        other => other,
+    })
+}
+
+fn filter_ceil(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                Value::Number(serde_json::Number::from_f64(f.ceil()).unwrap_or(n))
+            } else {
+                Value::Number(n)
+            }
+        }
+        other => other,
+    })
+}
+
+fn filter_floor(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                Value::Number(serde_json::Number::from_f64(f.floor()).unwrap_or(n))
+            } else {
+                Value::Number(n)
+            }
+        }
+        other => other,
+    })
+}
+
+fn filter_string(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::String(_) => input,
+        Value::Null => Value::String(String::new()),
+        other => Value::String(other.to_string()),
+    })
+}
+
+fn filter_int(input: Value) -> Result<Value, CliError> {
+    Ok(match &input {
+        Value::Number(n) => Value::Number(n.as_i64().unwrap_or(0).into()),
+        Value::String(s) => {
+            let n: i64 = s.parse().unwrap_or(0);
+            Value::Number(n.into())
+        }
+        Value::Bool(b) => Value::Number(if *b { 1 } else { 0 }.into()),
+        _ => Value::Number(0.into()),
+    })
+}
+
+fn filter_float(input: Value) -> Result<Value, CliError> {
+    Ok(match &input {
+        Value::Number(n) => input.clone(),
+        Value::String(s) => {
+            let f: f64 = s.parse().unwrap_or(0.0);
+            Value::Number(serde_json::Number::from_f64(f).unwrap_or(0.into()))
+        }
+        _ => Value::Number(serde_json::Number::from_f64(0.0).unwrap_or(0.into())),
+    })
+}
+
+fn filter_reverse(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Array(mut arr) => { arr.reverse(); Value::Array(arr) }
+        Value::String(s) => Value::String(s.chars().rev().collect()),
+        other => other,
+    })
+}
+
+fn filter_unique(input: Value) -> Result<Value, CliError> {
+    Ok(match input {
+        Value::Array(arr) => {
+            let mut seen = Vec::new();
+            let mut result = Vec::new();
+            for item in arr {
+                let key = item.to_string();
+                if !seen.contains(&key) {
+                    seen.push(key);
+                    result.push(item);
+                }
+            }
+            Value::Array(result)
+        }
+        other => other,
+    })
+}
+
+fn filter_split(input: Value, args: &[Value]) -> Result<Value, CliError> {
+    let sep = args.first().and_then(|v| v.as_str()).unwrap_or(",");
+    Ok(match input {
+        Value::String(s) => {
+            Value::Array(s.split(sep).map(|p| Value::String(p.to_string())).collect())
         }
         other => other,
     })
