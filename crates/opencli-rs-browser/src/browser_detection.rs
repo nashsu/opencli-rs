@@ -261,6 +261,10 @@ pub fn is_profile_locked(profile_dir: &std::path::Path) -> bool {
 }
 
 /// Detect the user's default browser (macOS).
+///
+/// Parses the LaunchServices plist to find which app handles `https`.
+/// Each handler block contains `LSHandlerRoleAll` and `LSHandlerURLScheme`
+/// in arbitrary order, so we collect both within each `{ ... }` block.
 #[cfg(target_os = "macos")]
 fn detect_default_browser_id() -> Option<String> {
     let output = std::process::Command::new("defaults")
@@ -272,24 +276,47 @@ fn detect_default_browser_id() -> Option<String> {
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
-    let mut found_https = false;
+
+    let mut role_all: Option<String> = None;
+    let mut is_https = false;
+
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("LSHandlerURLScheme") && trimmed.contains("https") {
-            found_https = true;
+
+        // Start of a new handler block — reset state
+        if trimmed == "{" {
+            role_all = None;
+            is_https = false;
         }
-        if found_https && trimmed.contains("LSHandlerRoleAll") {
+
+        // Capture the RoleAll value (skip the nested PreferredVersions one)
+        if trimmed.starts_with("LSHandlerRoleAll") && !trimmed.contains("-") {
             if let Some(eq) = trimmed.find('=') {
                 let val = trimmed[eq + 1..]
                     .trim()
                     .trim_matches(';')
                     .trim()
                     .trim_matches('"');
-                if !val.is_empty() {
-                    return Some(val.to_lowercase());
+                if !val.is_empty() && val != "-" {
+                    role_all = Some(val.to_lowercase());
                 }
             }
-            found_https = false;
+        }
+
+        // Check if this block handles https
+        if trimmed.contains("LSHandlerURLScheme") && trimmed.contains("https") {
+            is_https = true;
+        }
+
+        // End of block — check if we found what we need
+        if trimmed.starts_with("}") || trimmed.starts_with("},") {
+            if is_https {
+                if let Some(id) = role_all.take() {
+                    return Some(id);
+                }
+            }
+            role_all = None;
+            is_https = false;
         }
     }
     None

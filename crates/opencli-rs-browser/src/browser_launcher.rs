@@ -84,7 +84,7 @@ fn find_available_port() -> Option<u16> {
     None
 }
 
-/// Fallback profile directory when the user's browser profile is locked.
+/// Fallback profile directory when no browser profile is available.
 fn fallback_profile_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
@@ -92,34 +92,31 @@ fn fallback_profile_dir() -> PathBuf {
         .join("chrome-profile")
 }
 
-/// Launch a browser with CDP enabled on the given port.
-fn launch_browser(
-    info: &BrowserInfo,
-    port: u16,
-) -> Result<std::process::Child, CliError> {
-    let profile_dir = match &info.user_data_dir {
-        Some(dir) if !browser_detection::is_profile_locked(dir) => dir.clone(),
-        _ => {
-            let fb = fallback_profile_dir();
-            std::fs::create_dir_all(&fb).ok();
-            tracing::info!(
-                "Browser profile locked or unavailable, using fallback: {}",
-                fb.display()
-            );
-            fb
-        }
-    };
+/// Launch a headless browser with CDP enabled on the given port.
+///
+/// Uses `--headless=new` with a separate working profile directory so it
+/// doesn't conflict with the user's running browser. Cookies are synced
+/// from the user's real profile to preserve authenticated sessions.
+fn launch_browser(info: &BrowserInfo, port: u16) -> Result<std::process::Child, CliError> {
+    let working_dir = fallback_profile_dir();
+    std::fs::create_dir_all(&working_dir).ok();
+
+    // Sync cookies from the user's real profile to the headless profile
+    if let Some(source_dir) = &info.user_data_dir {
+        sync_cookies(source_dir, &working_dir);
+    }
 
     tracing::info!(
-        "Launching {} with CDP on port {} (profile: {})",
+        "Launching {} headless with CDP on port {} (profile: {})",
         info.name,
         port,
-        profile_dir.display()
+        working_dir.display()
     );
 
     let child = std::process::Command::new(&info.path)
+        .arg("--headless=new")
         .arg(format!("--remote-debugging-port={port}"))
-        .arg(format!("--user-data-dir={}", profile_dir.display()))
+        .arg(format!("--user-data-dir={}", working_dir.display()))
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
         .arg("--disable-blink-features=AutomationControlled")
@@ -130,6 +127,46 @@ fn launch_browser(
         .map_err(|e| CliError::browser_connect(format!("Failed to launch {}: {e}", info.name)))?;
 
     Ok(child)
+}
+
+/// Copy cookie and login state files from the user's real browser profile
+/// to the headless working profile. This preserves authenticated sessions
+/// without interfering with the running browser.
+fn sync_cookies(source: &std::path::Path, dest: &std::path::Path) {
+    let default_src = source.join("Default");
+    let default_dst = dest.join("Default");
+    std::fs::create_dir_all(&default_dst).ok();
+
+    // Files that carry session state
+    let cookie_files = [
+        "Cookies",
+        "Cookies-journal",
+        "Login Data",
+        "Login Data-journal",
+        "Web Data",
+        "Web Data-journal",
+    ];
+
+    for name in &cookie_files {
+        let src = default_src.join(name);
+        let dst = default_dst.join(name);
+        if src.exists() {
+            match std::fs::copy(&src, &dst) {
+                Ok(_) => tracing::debug!("Synced {name} to headless profile"),
+                Err(e) => tracing::debug!("Failed to sync {name}: {e}"),
+            }
+        }
+    }
+
+    // Also copy the Local State file (encryption keys for cookies)
+    let local_state_src = source.join("Local State");
+    let local_state_dst = dest.join("Local State");
+    if local_state_src.exists() {
+        match std::fs::copy(&local_state_src, &local_state_dst) {
+            Ok(_) => tracing::debug!("Synced Local State to headless profile"),
+            Err(e) => tracing::debug!("Failed to sync Local State: {e}"),
+        }
+    }
 }
 
 /// Wait for CDP to become ready on the given port.
