@@ -6,6 +6,7 @@ pub mod stealth;
 pub mod daemon;
 pub mod bridge;
 pub mod cdp;
+pub mod browser_detection;
 
 pub use bridge::BrowserBridge;
 pub use page::DaemonPage;

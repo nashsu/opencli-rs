@@ -12,6 +12,8 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+which = "7"
+dirs = "5"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 axum = { version = "0.8", features = ["ws"] }
 uuid = { version = "1", features = ["v4"] }
