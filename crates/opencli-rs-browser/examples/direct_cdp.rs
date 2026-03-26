@@ -1,14 +1,6 @@
 //! End-to-end test: connect via direct CDP and interact with the browser.
 //!
 //! Run with: cargo run -p opencli-rs-browser --example direct_cdp
-//!
-//! This example:
-//! 1. Discovers an existing CDP endpoint or launches a browser
-//! 2. Connects via WebSocket (direct CDP, no extension needed)
-//! 3. Navigates to a URL
-//! 4. Reads the page title and URL
-//! 5. Takes a DOM snapshot
-//! 6. Lists open tabs
 
 use opencli_rs_browser::browser_launcher;
 use opencli_rs_browser::CdpPage;
@@ -18,54 +10,63 @@ use opencli_rs_core::IPage;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Direct CDP Connection Test ===\n");
 
-    // Step 1: Get CDP endpoint
-    println!("[1] Discovering or launching browser with CDP...");
+    // Step 1: Get CDP endpoint (reuse existing or launch headless)
+    println!("[1] Connecting to CDP...");
     let endpoint = browser_launcher::connect_or_launch().await?;
     println!(
-        "    CDP endpoint: {} (launched: {})\n",
+        "    endpoint: {} (launched: {})\n",
         endpoint.ws_url, endpoint.launched
     );
 
-    // Step 2: Connect via WebSocket
-    println!("[2] Connecting to CDP WebSocket...");
     let page = CdpPage::connect(&endpoint.ws_url).await?;
-    println!("    Connected!\n");
 
-    // Step 3: Navigate
+    // Step 2: Navigate to X search
     let url = "https://x.com/search?q=rust+programming&f=live";
-    println!("[3] Navigating to {url}...");
+    println!("[2] Navigating to {url}...");
     page.goto(url, None).await?;
-    // Wait for page to load
-    page.wait_for_timeout(3000).await?;
-    println!("    Done.\n");
+    page.wait_for_timeout(5000).await?;
 
-    // Step 4: Read title and URL
     let title = page.title().await?;
     let current_url = page.url().await?;
-    println!("[4] Page info:");
     println!("    Title: {title}");
     println!("    URL:   {current_url}\n");
 
-    // Step 5: DOM snapshot
-    println!("[5] Taking DOM snapshot...");
-    let snapshot = page.snapshot(None).await?;
-    let snapshot_str = serde_json::to_string_pretty(&snapshot)?;
-    let preview: String = snapshot_str.chars().take(500).collect();
-    println!("    Snapshot preview (first 500 chars):");
-    println!("    {preview}...\n");
+    // Step 3: Extract tweet text from the page
+    println!("[3] Extracting tweets...\n");
+    let js = r#"
+        (function() {
+            const tweets = [];
+            const articles = document.querySelectorAll('article[data-testid="tweet"]');
+            articles.forEach((article, i) => {
+                if (i >= 10) return;
+                const userEl = article.querySelector('[data-testid="User-Name"]');
+                const textEl = article.querySelector('[data-testid="tweetText"]');
+                const user = userEl ? userEl.innerText.replace(/\n/g, ' ') : '?';
+                const text = textEl ? textEl.innerText : '';
+                if (text) {
+                    tweets.push({ user: user, text: text });
+                }
+            });
+            return JSON.stringify(tweets);
+        })()
+    "#;
 
-    // Step 6: List tabs
-    println!("[6] Listing open tabs...");
-    let tabs = page.tabs().await?;
-    for (i, tab) in tabs.iter().enumerate() {
-        println!(
-            "    Tab {}: {} — {}",
-            i,
-            tab.title.as_deref().unwrap_or("(untitled)"),
-            tab.url
-        );
+    let result = page.evaluate(js).await?;
+    let json_str = result.as_str().unwrap_or("[]");
+    let tweets: Vec<serde_json::Value> = serde_json::from_str(json_str).unwrap_or_default();
+
+    if tweets.is_empty() {
+        println!("    No tweets found (page may still be loading)");
+    } else {
+        for (i, tweet) in tweets.iter().enumerate() {
+            let user = tweet["user"].as_str().unwrap_or("?");
+            let text = tweet["text"].as_str().unwrap_or("");
+            println!("--- Tweet {} ---", i + 1);
+            println!("  @{}", user);
+            println!("  {}\n", text);
+        }
     }
 
-    println!("\n=== Test Complete ===");
+    println!("=== Done ===");
     Ok(())
 }
