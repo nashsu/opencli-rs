@@ -92,37 +92,52 @@ fn fallback_profile_dir() -> PathBuf {
         .join("chrome-profile")
 }
 
-/// Launch a headless browser with CDP enabled on the given port.
+/// Launch a browser with CDP enabled on the given port.
 ///
-/// Uses `--headless=new` with a separate working profile directory so it
-/// doesn't conflict with the user's running browser. Cookies are synced
-/// from the user's real profile to preserve authenticated sessions.
-fn launch_browser(info: &BrowserInfo, port: u16) -> Result<std::process::Child, CliError> {
+/// In headless mode (default): uses `--headless=new` with a separate working
+/// profile and synced cookies. Doesn't conflict with the running browser.
+///
+/// In headed mode: launches a visible browser window with the user's real
+/// profile. If the profile is locked (browser already running), uses a
+/// fallback profile.
+fn launch_browser(
+    info: &BrowserInfo,
+    port: u16,
+    headless: bool,
+) -> Result<std::process::Child, CliError> {
+    // Always use a separate working profile with cookies synced from the
+    // user's real browser — works whether headless or headed, never conflicts
+    // with the user's running browser.
     let working_dir = fallback_profile_dir();
     std::fs::create_dir_all(&working_dir).ok();
-
-    // Sync cookies from the user's real profile to the headless profile
     if let Some(source_dir) = &info.user_data_dir {
         sync_cookies(source_dir, &working_dir);
     }
+    let profile_dir = working_dir;
 
+    let mode = if headless { "headless" } else { "headed" };
     tracing::info!(
-        "Launching {} headless with CDP on port {} (profile: {})",
+        "Launching {} {} with CDP on port {} (profile: {})",
         info.name,
+        mode,
         port,
-        working_dir.display()
+        profile_dir.display()
     );
 
-    let child = std::process::Command::new(&info.path)
-        .arg("--headless=new")
-        .arg(format!("--remote-debugging-port={port}"))
-        .arg(format!("--user-data-dir={}", working_dir.display()))
+    let mut cmd = std::process::Command::new(&info.path);
+    if headless {
+        cmd.arg("--headless=new");
+    }
+    cmd.arg(format!("--remote-debugging-port={port}"))
+        .arg(format!("--user-data-dir={}", profile_dir.display()))
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
         .arg("--disable-blink-features=AutomationControlled")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let child = cmd
         .spawn()
         .map_err(|e| CliError::browser_connect(format!("Failed to launch {}: {e}", info.name)))?;
 
@@ -190,11 +205,21 @@ async fn wait_for_cdp_ready(port: u16) -> Result<CdpEndpoint, CliError> {
     )))
 }
 
-/// Discover an existing CDP-enabled browser or launch one.
+/// Discover an existing CDP-enabled browser or launch one (headless by default).
 ///
 /// 1. Scan ports for an existing CDP endpoint
 /// 2. If not found, detect browser, find available port, launch, wait for ready
+///
+/// Use `headless: true` (default) for background automation — no visible window,
+/// cookies synced from the user's real profile.
+/// Use `headless: false` for headed mode — visible browser window for debugging
+/// or when the user needs to watch automation.
 pub async fn connect_or_launch() -> Result<CdpEndpoint, CliError> {
+    connect_or_launch_with(true).await
+}
+
+/// Same as [`connect_or_launch`] but with explicit headless control.
+pub async fn connect_or_launch_with(headless: bool) -> Result<CdpEndpoint, CliError> {
     // 1. Check for existing CDP endpoint
     for port in CDP_PORT_START..CDP_PORT_END {
         if let Some(endpoint) = discover_existing_cdp(port).await {
@@ -217,7 +242,7 @@ pub async fn connect_or_launch() -> Result<CdpEndpoint, CliError> {
         ))
     })?;
 
-    let mut child = launch_browser(&info, port)?;
+    let mut child = launch_browser(&info, port, headless)?;
 
     // 4. Wait for CDP readiness
     match wait_for_cdp_ready(port).await {
