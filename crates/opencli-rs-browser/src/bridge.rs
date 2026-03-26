@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
+use crate::browser_launcher;
+use crate::cdp::CdpPage;
 use crate::daemon_client::DaemonClient;
 use crate::page::DaemonPage;
 
@@ -29,8 +31,40 @@ impl BrowserBridge {
         Self::new(DEFAULT_PORT)
     }
 
-    /// Connect to the daemon, starting it if necessary, and return a page.
+    /// Connect to a browser and return a page.
+    ///
+    /// Strategy: try direct CDP first (no extension needed), then fall back
+    /// to the daemon + Chrome extension flow.
     pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
+        // Strategy 1: Direct CDP — discover existing or launch browser with CDP
+        match browser_launcher::connect_or_launch().await {
+            Ok(endpoint) => {
+                info!(
+                    ws_url = %endpoint.ws_url,
+                    launched = endpoint.launched,
+                    "direct CDP endpoint available"
+                );
+                match CdpPage::connect(&endpoint.ws_url).await {
+                    Ok(page) => {
+                        info!("connected via direct CDP (no extension required)");
+                        return Ok(Arc::new(page));
+                    }
+                    Err(e) => {
+                        warn!("direct CDP connection failed, falling back to daemon: {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("direct CDP not available: {e}, trying daemon+extension");
+            }
+        }
+
+        // Strategy 2: Daemon + Chrome extension (original flow)
+        self.connect_via_daemon().await
+    }
+
+    /// Original daemon+extension connection flow.
+    async fn connect_via_daemon(&mut self) -> Result<Arc<dyn IPage>, CliError> {
         let client = Arc::new(DaemonClient::new(self.port));
 
         // Step 1: Check Chrome is running
@@ -238,5 +272,15 @@ mod tests {
     fn test_bridge_default_port() {
         let bridge = BrowserBridge::default_port();
         assert_eq!(bridge.port, DEFAULT_PORT);
+    }
+
+    #[tokio::test]
+    async fn test_connect_completes_without_panic() {
+        // Verify the two-strategy connect flow runs without panicking.
+        // Result depends on whether a browser is running locally:
+        // - Ok if direct CDP finds a running browser
+        // - Err if no browser/CDP available and daemon flow also fails
+        let mut bridge = BrowserBridge::new(19899);
+        let _result = bridge.connect().await;
     }
 }
