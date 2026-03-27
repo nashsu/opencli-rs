@@ -30,9 +30,10 @@ pipeline:
         return books.slice(0, limit).map(item => ({
           title: item.title || '',
           author: item.author || '',
+          cover: item.cover || '',
           progress: progressMap[item.bookId] != null ? progressMap[item.bookId] + '%' : '-',
           bookId: item.bookId || '',
         }));
       })()
 
-columns: [title, author, progress, bookId]
+columns: [title, author, cover, progress, bookId]
