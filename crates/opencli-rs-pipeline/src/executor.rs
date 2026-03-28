@@ -24,9 +24,9 @@ pub async fn execute_pipeline(
     let mut data = Value::Null;
 
     for (i, step) in pipeline.iter().enumerate() {
-        let obj = step.as_object().ok_or_else(|| {
-            CliError::pipeline(format!("Step {i} is not an object: {step}"))
-        })?;
+        let obj = step
+            .as_object()
+            .ok_or_else(|| CliError::pipeline(format!("Step {i} is not an object: {step}")))?;
 
         if obj.len() != 1 {
             return Err(CliError::pipeline(format!(
@@ -45,10 +45,7 @@ pub async fn execute_pipeline(
         let mut last_error: Option<CliError> = None;
 
         for attempt in 0..if is_browser { MAX_BROWSER_ATTEMPTS } else { 1 } {
-            match handler
-                .execute(page.clone(), params, &data, args)
-                .await
-            {
+            match handler.execute(page.clone(), params, &data, args).await {
                 Ok(result) => {
                     data = result;
                     last_error = None;
@@ -221,7 +218,10 @@ mod tests {
             .await
             .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("nonexistent"), "Error should mention the step name: {msg}");
+        assert!(
+            msg.contains("nonexistent"),
+            "Error should mention the step name: {msg}"
+        );
     }
 
     #[tokio::test]

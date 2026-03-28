@@ -152,8 +152,7 @@ impl IPage for DaemonPage {
 
     async fn snapshot(&self, options: Option<SnapshotOptions>) -> Result<Value, CliError> {
         let opts = options.unwrap_or_default();
-        let js =
-            dom_helpers::snapshot_js(opts.selector.as_deref(), opts.include_hidden);
+        let js = dom_helpers::snapshot_js(opts.selector.as_deref(), opts.include_hidden);
         self.eval_js(&js).await
     }
 
@@ -244,7 +243,10 @@ pub(crate) fn base64_decode_simple(input: &str) -> Vec<u8> {
     }
     let _ = TABLE; // suppress unused warning
 
-    let bytes: Vec<u8> = input.bytes().filter(|&b| b != b'=' && b != b'\n' && b != b'\r').collect();
+    let bytes: Vec<u8> = input
+        .bytes()
+        .filter(|&b| b != b'=' && b != b'\n' && b != b'\r')
+        .collect();
     let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
     for chunk in bytes.chunks(4) {
         let n = chunk.len();

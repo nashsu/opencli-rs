@@ -1,16 +1,15 @@
 //! Synthesize candidate CLIs from explore artifacts.
 //! Generates evaluate-based YAML pipelines (matching hand-written adapter patterns).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use opencli_rs_core::{CliError, Strategy};
 use tracing::debug;
 
 use crate::explore::{detect_site_name, infer_capability_name};
 use crate::types::{
-    AdapterCandidate, DiscoveredEndpoint, ExploreManifest, FieldInfo,
-    RecommendedArg, StoreHint, SynthesizeOptions,
-    LIMIT_PARAMS, PAGINATION_PARAMS, SEARCH_PARAMS, VOLATILE_PARAMS,
+    AdapterCandidate, DiscoveredEndpoint, ExploreManifest, FieldInfo, RecommendedArg, StoreHint,
+    SynthesizeOptions, LIMIT_PARAMS, PAGINATION_PARAMS, SEARCH_PARAMS, VOLATILE_PARAMS,
 };
 
 /// Internal capability representation used during synthesis.
@@ -59,10 +58,7 @@ pub fn synthesize(
     manifest: &ExploreManifest,
     options: SynthesizeOptions,
 ) -> Result<Vec<AdapterCandidate>, CliError> {
-    let site = options
-        .site
-        .as_deref()
-        .unwrap_or_else(|| manifest.url.as_str());
+    let site = options.site.as_deref().unwrap_or(manifest.url.as_str());
     let site_name = detect_site_name(site);
 
     // Build capabilities from endpoints
@@ -76,7 +72,7 @@ pub fn synthesize(
     let mut used_names = HashSet::new();
 
     for cap in &top_caps {
-        let endpoint = choose_endpoint(&cap, &manifest.endpoints);
+        let endpoint = choose_endpoint(cap, &manifest.endpoints);
         let endpoint = match endpoint {
             Some(ep) => ep,
             None => continue,
@@ -93,7 +89,7 @@ pub fn synthesize(
         }
         used_names.insert(cap_name.clone());
 
-        let yaml = build_candidate_yaml(&site_name, manifest, &cap, endpoint);
+        let yaml = build_candidate_yaml(&site_name, manifest, cap, endpoint);
         let description = format!(
             "{} (auto-generated)",
             if cap.description.is_empty() {
@@ -155,7 +151,7 @@ fn build_capabilities_from_endpoints(
 ) -> Vec<SynthesizeCapability> {
     let mut endpoints = manifest.endpoints.clone();
     // When goal is "search", boost endpoints with search params
-    let is_search_goal = goal.map_or(false, |g| g == "search");
+    let is_search_goal = goal == Some("search");
     endpoints.sort_by(|a, b| {
         if is_search_goal {
             // Prioritize endpoints with search params
@@ -197,13 +193,15 @@ fn build_capabilities_from_endpoints(
         };
 
         // Detect item_path from response_analysis or sample response
-        let item_path: Option<String> = ep.response_analysis.as_ref()
+        let item_path: Option<String> = ep
+            .response_analysis
+            .as_ref()
             .and_then(|ra| ra.item_path.clone())
             .or_else(|| detect_item_path(&ep.sample_response));
 
         caps.push(SynthesizeCapability {
             name: cap_name.clone(),
-            description: format!("{}", cap_name),
+            description: cap_name.to_string(),
             strategy: ep.auth_level,
             confidence: ep.confidence,
             endpoint: Some(ep.url.clone()),
@@ -240,13 +238,11 @@ fn choose_endpoint<'a>(
         }
     }
     // Fallback: highest scoring endpoint
-    endpoints
-        .iter()
-        .max_by(|a, b| {
-            a.confidence
-                .partial_cmp(&b.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+    endpoints.iter().max_by(|a, b| {
+        a.confidence
+            .partial_cmp(&b.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 // ── URL templating ──────────────────────────────────────────────────────────
@@ -302,10 +298,7 @@ fn build_evaluate_script(
     _columns: &[String],
     _detected_fields: &std::collections::HashMap<String, String>,
 ) -> String {
-    let path_chain: String = item_path
-        .split('.')
-        .map(|p| format!("?.{}", p))
-        .collect();
+    let path_chain: String = item_path.split('.').map(|p| format!("?.{}", p)).collect();
 
     // Don't do .map() in evaluate — let the pipeline map step handle field mapping.
     // evaluate only extracts the items array from the response.
@@ -336,14 +329,8 @@ fn build_candidate_yaml(
     endpoint: &DiscoveredEndpoint,
 ) -> String {
     let needs_browser = cap.strategy.requires_browser();
-    let has_keyword = cap
-        .recommended_args
-        .iter()
-        .any(|a| a.name == "keyword");
-    let templated_url = build_templated_url(
-        &endpoint.url,
-        has_keyword,
-    );
+    let has_keyword = cap.recommended_args.iter().any(|a| a.name == "keyword");
+    let templated_url = build_templated_url(&endpoint.url, has_keyword);
 
     let mut domain = String::new();
     if let Ok(parsed) = url::Url::parse(&manifest.url) {
@@ -361,9 +348,8 @@ fn build_candidate_yaml(
     // Build pipeline steps
     let mut pipeline_lines = Vec::new();
 
-    if cap.strategy == Strategy::Intercept && cap.store_hint.is_some() {
+    if let (Strategy::Intercept, Some(hint)) = (cap.strategy, cap.store_hint.as_ref()) {
         // Store-action: navigate + wait + tap (declarative, clean)
-        let hint = cap.store_hint.as_ref().unwrap();
         pipeline_lines.push(format!("  - navigate: \"{}\"", manifest.url));
         pipeline_lines.push("  - wait: 3".to_string());
 
@@ -381,15 +367,12 @@ fn build_candidate_yaml(
                 .flatten()
                 .filter(|p| !p.is_empty())
                 .collect();
-            let capture_part = path_parts
-                .iter()
-                .filter(|p| {
-                    let re_version = p.len() <= 3
-                        && p.starts_with('v')
-                        && p[1..].chars().all(|c| c.is_ascii_digit());
-                    !re_version
-                })
-                .last();
+            let capture_part = path_parts.iter().rfind(|p| {
+                let re_version = p.len() <= 3
+                    && p.starts_with('v')
+                    && p[1..].chars().all(|c| c.is_ascii_digit());
+                !re_version
+            });
             if let Some(cp) = capture_part {
                 tap_parts.push(format!("      capture: {}", cp));
             }
@@ -404,13 +387,23 @@ fn build_candidate_yaml(
         // Browser-based: navigate + evaluate (like bilibili/hot.yaml, twitter/trending.yaml)
         pipeline_lines.push(format!("  - navigate: \"{}\"", manifest.url));
         let item_path = cap.item_path.as_deref().unwrap_or("data");
-        let detected = endpoint.response_analysis.as_ref()
+        let detected = endpoint
+            .response_analysis
+            .as_ref()
             .map(|ra| &ra.detected_fields)
             .cloned()
             .unwrap_or_default();
-        let eval_script =
-            build_evaluate_script(&templated_url, item_path, &endpoint.fields, &columns, &detected);
-        pipeline_lines.push(format!("  - evaluate: |\n      {}", eval_script.replace('\n', "\n      ")));
+        let eval_script = build_evaluate_script(
+            &templated_url,
+            item_path,
+            &endpoint.fields,
+            &columns,
+            &detected,
+        );
+        pipeline_lines.push(format!(
+            "  - evaluate: |\n      {}",
+            eval_script.replace('\n', "\n      ")
+        ));
     } else {
         // Public API: direct fetch (like hackernews/top.yaml)
         pipeline_lines.push(format!("  - fetch:\n      url: \"{}\"", templated_url));
@@ -424,7 +417,9 @@ fn build_candidate_yaml(
     if !has_keyword {
         map_entries.push("      rank: \"${{ index + 1 }}\"".to_string());
     }
-    let detected = endpoint.response_analysis.as_ref()
+    let detected = endpoint
+        .response_analysis
+        .as_ref()
         .map(|ra| &ra.detected_fields)
         .cloned()
         .unwrap_or_default();
@@ -433,10 +428,13 @@ fn build_candidate_yaml(
         // Priority: 1) detected_fields mapping (role → actual path)
         //           2) FieldInfo with matching role
         //           3) column name as-is
-        let field_path = detected.get(col.as_str())
+        let field_path = detected
+            .get(col.as_str())
             .cloned()
             .or_else(|| {
-                endpoint.fields.iter()
+                endpoint
+                    .fields
+                    .iter()
                     .find(|f| f.role.as_deref() == Some(col.as_str()))
                     .map(|f| f.name.clone())
             })
@@ -503,10 +501,14 @@ fn build_candidate_yaml(
 // ── Args building ───────────────────────────────────────────────────────────
 
 /// Build recommended args from URL query params and field analysis.
-fn build_recommended_args(url: &str, _fields: &[FieldInfo], goal: Option<&str>) -> Vec<RecommendedArg> {
+fn build_recommended_args(
+    url: &str,
+    _fields: &[FieldInfo],
+    goal: Option<&str>,
+) -> Vec<RecommendedArg> {
     let qp = extract_query_param_names(url);
-    let has_search = qp.iter().any(|p| SEARCH_PARAMS.contains(&p.as_str()))
-        || goal.map_or(false, |g| g == "search");
+    let has_search =
+        qp.iter().any(|p| SEARCH_PARAMS.contains(&p.as_str())) || goal == Some("search");
     let has_pagination = qp.iter().any(|p| PAGINATION_PARAMS.contains(&p.as_str()));
 
     let mut args = Vec::new();
@@ -575,7 +577,9 @@ fn infer_columns_from_analysis(
     ra: &crate::types::ResponseAnalysis,
     fields: &[FieldInfo],
 ) -> Vec<String> {
-    let preferred_order = ["title", "url", "author", "score", "time", "id", "cover", "category"];
+    let preferred_order = [
+        "title", "url", "author", "score", "time", "id", "cover", "category",
+    ];
     let mut cols = Vec::new();
 
     // First add columns from detected_fields (role-based, in preferred order)
@@ -589,13 +593,21 @@ fn infer_columns_from_analysis(
     if cols.len() < 3 {
         let skip = ["_", "id", "mid", "uid", "cid", "oid", "rid"];
         for field in &ra.sample_fields {
-            if cols.len() >= 6 { break; }
+            if cols.len() >= 6 {
+                break;
+            }
             let lower = field.to_lowercase();
             // Skip internal/id fields and already-added ones
-            if skip.iter().any(|s| lower == *s) { continue; }
-            if cols.iter().any(|c| c == field) { continue; }
+            if skip.iter().any(|s| lower == *s) {
+                continue;
+            }
+            if cols.iter().any(|c| c == field) {
+                continue;
+            }
             // Skip nested paths (keep top-level only)
-            if field.contains('.') { continue; }
+            if field.contains('.') {
+                continue;
+            }
             cols.push(field.clone());
         }
     }
@@ -653,7 +665,13 @@ fn find_item_path(value: &serde_json::Value, prefix: &str, depth: usize) -> Opti
             // Recurse into nested objects
             if let Some(nested) = find_item_path(val, &path, depth + 1) {
                 // Prefer deeper paths (more specific)
-                if best_path.is_none() || nested.matches('.').count() > best_path.as_ref().map(|p| p.matches('.').count()).unwrap_or(0) {
+                if best_path.is_none()
+                    || nested.matches('.').count()
+                        > best_path
+                            .as_ref()
+                            .map(|p| p.matches('.').count())
+                            .unwrap_or(0)
+                {
                     best_path = Some(nested);
                 }
             }
@@ -687,12 +705,11 @@ fn url_last_segment(url: &str) -> Option<String> {
     let parsed = url::Url::parse(url).ok()?;
     parsed
         .path_segments()?
-        .filter(|s| {
-            !s.is_empty()
-                && !s.chars().all(|c| c.is_ascii_digit())
-                && !(s.len() >= 8 && s.chars().all(|c| c.is_ascii_hexdigit()))
+        .rfind(|s: &&str| {
+            !(s.is_empty()
+                || s.chars().all(|c| c.is_ascii_digit())
+                || s.len() >= 8 && s.chars().all(|c| c.is_ascii_hexdigit()))
         })
-        .last()
         .map(|s| {
             s.chars()
                 .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })

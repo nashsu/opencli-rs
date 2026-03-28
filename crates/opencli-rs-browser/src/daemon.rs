@@ -172,7 +172,11 @@ async fn command_handler(
 
     // Create a oneshot channel for the result
     let (tx, rx) = oneshot::channel::<DaemonResult>();
-    state.pending_commands.write().await.insert(cmd_id.clone(), tx);
+    state
+        .pending_commands
+        .write()
+        .await
+        .insert(cmd_id.clone(), tx);
 
     // Forward command to extension via WebSocket
     {
@@ -203,7 +207,10 @@ async fn command_handler(
             } else {
                 StatusCode::UNPROCESSABLE_ENTITY
             };
-            (status, Json(serde_json::to_value(result).unwrap_or(json!({}))))
+            (
+                status,
+                Json(serde_json::to_value(result).unwrap_or(json!({}))),
+            )
         }
         Ok(Err(_)) => (
             StatusCode::INTERNAL_SERVER_ERROR,

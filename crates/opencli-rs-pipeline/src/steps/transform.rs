@@ -34,14 +34,8 @@ impl StepHandler for SelectStep {
         let mut current = data.clone();
         for segment in parse_path_segments(path) {
             current = match segment {
-                PathSegment::Key(key) => current
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or(Value::Null),
-                PathSegment::Index(idx) => current
-                    .get(idx)
-                    .cloned()
-                    .unwrap_or(Value::Null),
+                PathSegment::Key(key) => current.get(&key).cloned().unwrap_or(Value::Null),
+                PathSegment::Index(idx) => current.get(idx).cloned().unwrap_or(Value::Null),
             };
         }
 
@@ -328,10 +322,15 @@ impl StepHandler for LimitStep {
                 let val = render_template_str(s, &ctx)?;
                 val.as_u64()
                     .or_else(|| val.as_str().and_then(|s| s.parse::<u64>().ok()))
-                    .ok_or_else(|| CliError::pipeline("limit: template did not resolve to a number"))?
-                    as usize
+                    .ok_or_else(|| {
+                        CliError::pipeline("limit: template did not resolve to a number")
+                    })? as usize
             }
-            _ => return Err(CliError::pipeline("limit: params must be a number or template string")),
+            _ => {
+                return Err(CliError::pipeline(
+                    "limit: params must be a number or template string",
+                ))
+            }
         };
 
         let truncated: Vec<Value> = arr.iter().take(n).cloned().collect();

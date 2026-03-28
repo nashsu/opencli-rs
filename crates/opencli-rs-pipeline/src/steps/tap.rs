@@ -111,7 +111,6 @@ impl StepHandler for TapStep {
 
         // Extract action args (optional)
         let action_args = obj.get("args").cloned().unwrap_or(Value::Array(vec![]));
-        let action_args_json = serde_json::to_string(&action_args).unwrap_or("[]".to_string());
 
         let store_name_json = serde_json::to_string(&store_name).unwrap_or("\"\"".to_string());
         let action_name_json = serde_json::to_string(&action_name).unwrap_or("\"\"".to_string());
@@ -127,10 +126,7 @@ impl StepHandler for TapStep {
                 .iter()
                 .map(|a| serde_json::to_string(a).unwrap_or("null".to_string()))
                 .collect();
-            format!(
-                "store[{action_name_json}]({})",
-                rendered_args.join(", ")
-            )
+            format!("store[{action_name_json}]({})", rendered_args.join(", "))
         };
 
         // Generate self-contained JS that does everything in the browser
@@ -226,10 +222,7 @@ impl StepHandler for TapStep {
 
         // Check if the result is an error object from the JS
         if let Some(error) = result.get("error").and_then(|v| v.as_str()) {
-            let hint = result
-                .get("hint")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let hint = result.get("hint").and_then(|v| v.as_str()).unwrap_or("");
             return Err(CliError::command_execution(format!(
                 "tap: {} {}",
                 error,

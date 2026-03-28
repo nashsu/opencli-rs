@@ -58,9 +58,7 @@ fn coerce_value(raw: &str, arg_type: &ArgType, name: &str) -> Result<Value, CliE
         ArgType::Number => raw
             .parse::<f64>()
             .map(|n| Value::Number(serde_json::Number::from_f64(n).unwrap_or(0.into())))
-            .map_err(|_| {
-                CliError::argument(format!("'{}' expects a number, got: {}", name, raw))
-            }),
+            .map_err(|_| CliError::argument(format!("'{}' expects a number, got: {}", name, raw))),
         ArgType::Bool | ArgType::Boolean => match raw.to_lowercase().as_str() {
             "true" | "1" | "yes" => Ok(Value::Bool(true)),
             "false" | "0" | "no" => Ok(Value::Bool(false)),

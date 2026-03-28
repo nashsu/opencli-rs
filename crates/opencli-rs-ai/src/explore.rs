@@ -10,10 +10,9 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::types::{
-    DiscoveredEndpoint, ExploreManifest, ExploreOptions, ExploreResult,
-    FieldInfo, InferredCapability, RecommendedArg, ResponseAnalysis,
-    StoreHint, StoreInfo, FIELD_ROLES, KNOWN_SITE_ALIASES, LIMIT_PARAMS,
-    PAGINATION_PARAMS, SEARCH_PARAMS, VOLATILE_PARAMS,
+    DiscoveredEndpoint, ExploreManifest, ExploreOptions, ExploreResult, FieldInfo,
+    InferredCapability, RecommendedArg, ResponseAnalysis, StoreHint, StoreInfo, FIELD_ROLES,
+    KNOWN_SITE_ALIASES, LIMIT_PARAMS, PAGINATION_PARAMS, SEARCH_PARAMS, VOLATILE_PARAMS,
 };
 
 // ── JavaScript snippets ─────────────────────────────────────────────────────
@@ -116,7 +115,8 @@ pub async fn explore(
 
     // Step 1: Navigate to URL
     page.goto(url, None).await?;
-    page.wait_for_timeout((wait_seconds * 1000.0) as u64).await?;
+    page.wait_for_timeout((wait_seconds * 1000.0) as u64)
+        .await?;
 
     // Step 2: Auto-scroll to trigger lazy loading
     let max_scrolls = options.max_scrolls.unwrap_or(5);
@@ -132,7 +132,8 @@ pub async fn explore(
     if options.auto_fuzz.unwrap_or(false) {
         // Targeted clicks by label
         for label in &options.click_labels {
-            let safe_label = serde_json::to_string(label).unwrap_or_else(|_| format!("\"{}\"", label));
+            let safe_label =
+                serde_json::to_string(label).unwrap_or_else(|_| format!("\"{}\"", label));
             let click_js = format!(
                 r#"
                 (() => {{
@@ -187,16 +188,19 @@ pub async fn explore(
     };
 
     // Step 6.7: If goal is "search" and no search endpoints found, try discovering search
-    let is_search_goal = options.goal.as_deref().map_or(false, |g| g == "search");
+    let is_search_goal = options.goal.as_deref() == Some("search");
     if is_search_goal {
         let has_search = network.iter().any(|r| {
-            SEARCH_PARAMS.iter().any(|p| r.url.contains(&format!("{}=", p)))
+            SEARCH_PARAMS
+                .iter()
+                .any(|p| r.url.contains(&format!("{}=", p)))
         });
         if !has_search {
             debug!("Goal is 'search' but no search endpoints found, trying search discovery");
             // Try common search paths
             let base = url::Url::parse(url).ok();
-            let origin = base.as_ref()
+            let origin = base
+                .as_ref()
                 .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                 .unwrap_or_default();
 
@@ -209,14 +213,16 @@ pub async fn explore(
 
             for search_url in &search_urls {
                 debug!("Trying search URL: {}", search_url);
-                if let Ok(_) = page.goto(search_url, None).await {
+                if page.goto(search_url, None).await.is_ok() {
                     let _ = page.wait_for_timeout(3000).await;
                     // Capture new network requests
                     let mut new_network = page.get_network_requests().await.unwrap_or_default();
                     re_fetch_missing_bodies(page, &mut new_network).await;
                     // Check if any new requests have search params
                     let found_search = new_network.iter().any(|r| {
-                        SEARCH_PARAMS.iter().any(|p| r.url.contains(&format!("{}=", p)))
+                        SEARCH_PARAMS
+                            .iter()
+                            .any(|p| r.url.contains(&format!("{}=", p)))
                     });
                     if found_search {
                         debug!("Found search endpoints via {}", search_url);
@@ -277,7 +283,8 @@ pub async fn explore_full(
 
     // Step 1: Navigate
     page.goto(url, None).await?;
-    page.wait_for_timeout((wait_seconds * 1000.0) as u64).await?;
+    page.wait_for_timeout((wait_seconds * 1000.0) as u64)
+        .await?;
 
     // Step 2: Auto-scroll
     let max_scrolls = options.max_scrolls.unwrap_or(5);
@@ -292,7 +299,8 @@ pub async fn explore_full(
     // Step 2.5: Interactive fuzzing
     if options.auto_fuzz.unwrap_or(false) {
         for label in &options.click_labels {
-            let safe_label = serde_json::to_string(label).unwrap_or_else(|_| format!("\"{}\"", label));
+            let safe_label =
+                serde_json::to_string(label).unwrap_or_else(|_| format!("\"{}\"", label));
             let click_js = format!(
                 r#"
                 (() => {{
@@ -347,8 +355,8 @@ pub async fn explore_full(
         url,
     );
 
-    let site = site_name_opt
-        .unwrap_or_else(|| detect_site_name(metadata.url.as_deref().unwrap_or(url)));
+    let site =
+        site_name_opt.unwrap_or_else(|| detect_site_name(metadata.url.as_deref().unwrap_or(url)));
 
     Ok(ExploreResult {
         site,
@@ -445,7 +453,7 @@ async fn probe_initial_state(page: &dyn IPage, _url: &str, network: &mut Vec<Net
                 if body.len() > 100 {
                     debug!("Found __INITIAL_STATE__ data ({} bytes)", body.len());
                     network.push(NetworkRequest {
-                        url: format!("__INITIAL_STATE__"),
+                        url: "__INITIAL_STATE__".to_string(),
                         method: "SSR".to_string(),
                         status: Some(200),
                         headers: {
@@ -480,7 +488,7 @@ async fn re_fetch_missing_bodies(page: &dyn IPage, network: &mut [NetworkRequest
             || entry.url.contains("/x/")
             || entry.url.ends_with(".json");
         if entry.method == "GET"
-            && entry.status.map_or(true, |s| s == 200) // Performance API returns null status
+            && entry.status.is_none_or(|s| s == 200) // Performance API returns null status
             && inferred_json
             && entry.response_body.is_none()
         {
@@ -497,20 +505,19 @@ async fn re_fetch_missing_bodies(page: &dyn IPage, network: &mut [NetworkRequest
                 }})()"#,
                 url = url_json,
             );
-            match page.evaluate(&js).await {
-                Ok(val) => {
-                    if !val.is_null() {
-                        if let Ok(s) = serde_json::to_string(&val) {
-                            entry.response_body = Some(s);
-                            // Also populate status and content_type since Performance API doesn't provide them
-                            entry.status = Some(200);
-                            if entry.headers.is_empty() {
-                                entry.headers.insert("content-type".to_string(), "application/json".to_string());
-                            }
+            if let Ok(val) = page.evaluate(&js).await {
+                if !val.is_null() {
+                    if let Ok(s) = serde_json::to_string(&val) {
+                        entry.response_body = Some(s);
+                        // Also populate status and content_type since Performance API doesn't provide them
+                        entry.status = Some(200);
+                        if entry.headers.is_empty() {
+                            entry
+                                .headers
+                                .insert("content-type".to_string(), "application/json".to_string());
                         }
                     }
                 }
-                Err(_) => {}
             }
             fetched += 1;
         }
@@ -521,9 +528,7 @@ async fn re_fetch_missing_bodies(page: &dyn IPage, network: &mut [NetworkRequest
 
 /// Filter, deduplicate, and score network endpoints.
 /// Returns (analyzed endpoints sorted by score desc, total unique count).
-pub(crate) fn analyze_endpoints(
-    requests: &[NetworkRequest],
-) -> (Vec<DiscoveredEndpoint>, usize) {
+pub(crate) fn analyze_endpoints(requests: &[NetworkRequest]) -> (Vec<DiscoveredEndpoint>, usize) {
     let mut seen: HashMap<String, DiscoveredEndpoint> = HashMap::new();
 
     for req in requests {
@@ -572,21 +577,27 @@ pub(crate) fn analyze_endpoints(
 
         // Parse query parameters
         let query_params = extract_query_params(&req.url);
-        let has_search = query_params.iter().any(|p| SEARCH_PARAMS.contains(&p.as_str()));
-        let has_pagination = query_params.iter().any(|p| PAGINATION_PARAMS.contains(&p.as_str()));
-        let has_limit = query_params.iter().any(|p| LIMIT_PARAMS.contains(&p.as_str()));
+        let has_search = query_params
+            .iter()
+            .any(|p| SEARCH_PARAMS.contains(&p.as_str()));
+        let has_pagination = query_params
+            .iter()
+            .any(|p| PAGINATION_PARAMS.contains(&p.as_str()));
+        let has_limit = query_params
+            .iter()
+            .any(|p| LIMIT_PARAMS.contains(&p.as_str()));
 
         // Detect auth indicators from request headers
         let auth_indicators = detect_auth_indicators(&req.headers);
 
         // Analyze response body
-        let (response_analysis, fields, sample_response) =
-            if let Some(ref body) = req.response_body {
-                let (ra, flds, sample) = analyze_response_body(body);
-                (ra, flds, sample)
-            } else {
-                (None, vec![], None)
-            };
+        let (response_analysis, fields, sample_response) = if let Some(ref body) = req.response_body
+        {
+            let (ra, flds, sample) = analyze_response_body(body);
+            (ra, flds, sample)
+        } else {
+            (None, vec![], None)
+        };
 
         // Score the endpoint
         let score = score_endpoint(
@@ -599,7 +610,7 @@ pub(crate) fn analyze_endpoints(
             &response_analysis,
         );
 
-        let confidence = (score as f64 / 20.0).min(1.0).max(0.0);
+        let confidence = (score as f64 / 20.0).clamp(0.0, 1.0);
         let auth_level = infer_strategy(&auth_indicators);
 
         seen.insert(
@@ -625,10 +636,7 @@ pub(crate) fn analyze_endpoints(
     }
 
     let total_count = seen.len();
-    let mut analyzed: Vec<_> = seen
-        .into_values()
-        .filter(|ep| ep.score >= 5)
-        .collect();
+    let mut analyzed: Vec<_> = seen.into_values().filter(|ep| ep.score >= 5).collect();
     analyzed.sort_by(|a, b| b.score.cmp(&a.score));
 
     (analyzed, total_count)
@@ -657,9 +665,7 @@ fn analyze_response_body(body: &str) -> (Option<ResponseAnalysis>, Vec<FieldInfo
     let (item_path, items) = best;
 
     let sample = items.first().copied();
-    let sample_fields = sample
-        .map(|s| flatten_fields(s, "", 2))
-        .unwrap_or_default();
+    let sample_fields = sample.map(|s| flatten_fields(s, "", 2)).unwrap_or_default();
 
     // Detect field roles
     let detected_fields = detect_field_roles(&sample_fields);
@@ -682,7 +688,11 @@ fn analyze_response_body(body: &str) -> (Option<ResponseAnalysis>, Vec<FieldInfo
 }
 
 /// Recursively find arrays of objects, returning (path, items) candidates.
-fn find_item_arrays<'a>(value: &'a Value, path: &str, depth: usize) -> Vec<(String, Vec<&'a Value>)> {
+fn find_item_arrays<'a>(
+    value: &'a Value,
+    path: &str,
+    depth: usize,
+) -> Vec<(String, Vec<&'a Value>)> {
     if depth > 4 {
         return vec![];
     }
@@ -763,7 +773,10 @@ fn detect_field_roles(sample_fields: &[String]) -> HashMap<String, String> {
 }
 
 /// Build legacy `FieldInfo` vec from a sample object and detected roles.
-fn build_field_infos(sample: Option<&Value>, detected_fields: &HashMap<String, String>) -> Vec<FieldInfo> {
+fn build_field_infos(
+    sample: Option<&Value>,
+    detected_fields: &HashMap<String, String>,
+) -> Vec<FieldInfo> {
     let obj = match sample.and_then(|v| v.as_object()) {
         Some(o) => o,
         None => return vec![],
@@ -909,8 +922,7 @@ fn infer_capabilities_from_endpoints(
             let suffix = ep
                 .pattern
                 .split('/')
-                .filter(|s| !s.is_empty() && !s.starts_with('{') && !s.contains('.'))
-                .last()
+                .rfind(|s| !s.is_empty() && !s.starts_with('{') && !s.contains('.'))
                 .map(|s| s.to_string());
             cap_name = if let Some(s) = suffix {
                 format!("{}_{}", cap_name, s)
@@ -976,17 +988,13 @@ fn infer_capabilities_from_endpoints(
             ep_strategy_str
         };
 
-        let site_display = site_name.unwrap_or_else(|| {
-            // Can't call detect_site_name here without allocating.
-            // Use a fallback; the caller typically provides site_name.
-            "site"
-        });
+        let site_display = site_name.unwrap_or("site");
 
         capabilities.push(InferredCapability {
             name: cap_name.clone(),
             description: format!("{} {}", site_display, cap_name),
             strategy: strategy_str,
-            confidence: (ep.score as f64 / 20.0).min(1.0).max(0.0),
+            confidence: (ep.score as f64 / 20.0).clamp(0.0, 1.0),
             endpoint: ep.pattern.clone(),
             item_path: ep
                 .response_analysis
@@ -1311,9 +1319,9 @@ pub(crate) fn infer_capability_name(url: &str, goal: Option<&str>) -> String {
             .into_iter()
             .flatten()
             .filter(|s| {
-                !s.is_empty()
-                    && !s.chars().all(|c| c.is_ascii_digit())
-                    && !(s.len() >= 8 && s.chars().all(|c| c.is_ascii_hexdigit()))
+                !(s.is_empty()
+                    || s.chars().all(|c| c.is_ascii_digit())
+                    || s.len() >= 8 && s.chars().all(|c| c.is_ascii_hexdigit()))
             })
             .collect();
         if let Some(last) = segs.last() {
@@ -1335,7 +1343,14 @@ pub fn render_explore_summary(result: &ExploreResult) -> String {
         "opencli probe: OK".to_string(),
         format!("Site: {}", result.site),
         format!("URL: {}", result.target_url),
-        format!("Title: {}", if result.title.is_empty() { "(none)" } else { &result.title }),
+        format!(
+            "Title: {}",
+            if result.title.is_empty() {
+                "(none)"
+            } else {
+                &result.title
+            }
+        ),
         format!("Strategy: {}", result.top_strategy),
         format!(
             "Endpoints: {} total, {} API",
@@ -1417,7 +1432,10 @@ mod tests {
 
     #[test]
     fn test_detect_site_name_known_alias() {
-        assert_eq!(detect_site_name("https://news.ycombinator.com"), "hackernews");
+        assert_eq!(
+            detect_site_name("https://news.ycombinator.com"),
+            "hackernews"
+        );
         assert_eq!(detect_site_name("https://x.com/home"), "twitter");
         assert_eq!(detect_site_name("https://www.bilibili.com/hot"), "bilibili");
     }
@@ -1444,9 +1462,18 @@ mod tests {
 
     #[test]
     fn test_infer_capability_name_from_url() {
-        assert_eq!(infer_capability_name("https://example.com/api/hot", None), "hot");
-        assert_eq!(infer_capability_name("https://example.com/api/search", None), "search");
-        assert_eq!(infer_capability_name("https://example.com/api/feed", None), "feed");
+        assert_eq!(
+            infer_capability_name("https://example.com/api/hot", None),
+            "hot"
+        );
+        assert_eq!(
+            infer_capability_name("https://example.com/api/search", None),
+            "search"
+        );
+        assert_eq!(
+            infer_capability_name("https://example.com/api/feed", None),
+            "feed"
+        );
     }
 
     #[test]
@@ -1540,7 +1567,15 @@ mod tests {
             },
             sample_fields: vec!["title".to_string(), "url".to_string()],
         });
-        let s = score_endpoint("application/json", "example.com/api/data", Some(200), false, false, false, &ra);
+        let s = score_endpoint(
+            "application/json",
+            "example.com/api/data",
+            Some(200),
+            false,
+            false,
+            false,
+            &ra,
+        );
         // 10 (json) + 5 (has analysis) + 5 (item_count capped) + 4 (2 fields * 2) + 3 (/api/) + 2 (200) = 29
         assert_eq!(s, 29);
     }

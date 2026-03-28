@@ -1,19 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Strategy {
+    #[default]
     Public,
     Cookie,
     Header,
     Intercept,
     Ui,
-}
-
-impl Default for Strategy {
-    fn default() -> Self {
-        Self::Public
-    }
 }
 
 impl Strategy {

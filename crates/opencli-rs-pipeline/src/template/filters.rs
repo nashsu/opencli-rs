@@ -2,11 +2,7 @@ use serde_json::Value;
 
 use opencli_rs_core::CliError;
 
-pub fn apply_filter(
-    name: &str,
-    input: Value,
-    args: &[Value],
-) -> Result<Value, CliError> {
+pub fn apply_filter(name: &str, input: Value, args: &[Value]) -> Result<Value, CliError> {
     match name {
         "default" => filter_default(input, args),
         "join" => filter_join(input, args),
@@ -50,10 +46,7 @@ fn filter_default(input: Value, args: &[Value]) -> Result<Value, CliError> {
 }
 
 fn filter_join(input: Value, args: &[Value]) -> Result<Value, CliError> {
-    let sep = args
-        .first()
-        .and_then(|v| v.as_str())
-        .unwrap_or(",");
+    let sep = args.first().and_then(|v| v.as_str()).unwrap_or(",");
     match input {
         Value::Array(arr) => {
             let parts: Vec<String> = arr
@@ -91,10 +84,7 @@ fn filter_trim(input: Value) -> Result<Value, CliError> {
 }
 
 fn filter_truncate(input: Value, args: &[Value]) -> Result<Value, CliError> {
-    let n = args
-        .first()
-        .and_then(|v| v.as_u64())
-        .unwrap_or(50) as usize;
+    let n = args.first().and_then(|v| v.as_u64()).unwrap_or(50) as usize;
     Ok(match input {
         Value::String(s) => {
             if s.chars().count() > n {
@@ -119,9 +109,7 @@ fn filter_replace(input: Value, args: &[Value]) -> Result<Value, CliError> {
 
 fn filter_keys(input: Value) -> Result<Value, CliError> {
     Ok(match input {
-        Value::Object(map) => {
-            Value::Array(map.keys().map(|k| Value::String(k.clone())).collect())
-        }
+        Value::Object(map) => Value::Array(map.keys().map(|k| Value::String(k.clone())).collect()),
         _ => Value::Array(vec![]),
     })
 }
@@ -151,7 +139,9 @@ fn filter_last(input: Value) -> Result<Value, CliError> {
 }
 
 fn filter_json(input: Value) -> Result<Value, CliError> {
-    Ok(Value::String(serde_json::to_string(&input).unwrap_or_default()))
+    Ok(Value::String(
+        serde_json::to_string(&input).unwrap_or_default(),
+    ))
 }
 
 fn filter_slugify(input: Value) -> Result<Value, CliError> {
@@ -228,10 +218,7 @@ fn filter_ext(input: Value) -> Result<Value, CliError> {
 fn filter_basename(input: Value) -> Result<Value, CliError> {
     Ok(match input {
         Value::String(s) => {
-            let name = s
-                .rsplit('/')
-                .next()
-                .unwrap_or(&s);
+            let name = s.rsplit('/').next().unwrap_or(&s);
             Value::String(name.to_string())
         }
         other => other,
@@ -244,12 +231,15 @@ fn filter_urlencode(input: Value) -> Result<Value, CliError> {
         other => other.to_string(),
     };
     // Percent-encode all non-unreserved characters per RFC 3986
-    let encoded: String = s.bytes().map(|b| match b {
-        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-            format!("{}", b as char)
-        }
-        _ => format!("%{:02X}", b),
-    }).collect();
+    let encoded: String = s
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                format!("{}", b as char)
+            }
+            _ => format!("%{:02X}", b),
+        })
+        .collect();
     Ok(Value::String(encoded))
 }
 
@@ -263,9 +253,7 @@ fn filter_urldecode(input: Value) -> Result<Value, CliError> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(val) = u8::from_str_radix(
-                &s[i + 1..i + 3], 16
-            ) {
+            if let Ok(val) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
                 result.push(val);
                 i += 3;
                 continue;
@@ -357,7 +345,7 @@ fn filter_int(input: Value) -> Result<Value, CliError> {
 
 fn filter_float(input: Value) -> Result<Value, CliError> {
     Ok(match &input {
-        Value::Number(n) => input.clone(),
+        Value::Number(_) => input.clone(),
         Value::String(s) => {
             let f: f64 = s.parse().unwrap_or(0.0);
             Value::Number(serde_json::Number::from_f64(f).unwrap_or(0.into()))
@@ -368,7 +356,10 @@ fn filter_float(input: Value) -> Result<Value, CliError> {
 
 fn filter_reverse(input: Value) -> Result<Value, CliError> {
     Ok(match input {
-        Value::Array(mut arr) => { arr.reverse(); Value::Array(arr) }
+        Value::Array(mut arr) => {
+            arr.reverse();
+            Value::Array(arr)
+        }
         Value::String(s) => Value::String(s.chars().rev().collect()),
         other => other,
     })

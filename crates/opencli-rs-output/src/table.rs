@@ -48,7 +48,7 @@ pub fn render_table(data: &Value, columns: Option<&[String]>) -> String {
                 return table.to_string();
             }
             let mut table = Table::new();
-            table.set_header(cols.iter().map(|c| Cell::new(c)));
+            table.set_header(cols.iter().map(Cell::new));
             for item in arr {
                 let row: Vec<Cell> = cols
                     .iter()

@@ -138,7 +138,6 @@ impl FetchStep {
                 .unwrap_or_default(),
         }
     }
-
 }
 
 impl Default for FetchStep {
@@ -169,7 +168,9 @@ impl StepHandler for FetchStep {
                 let url = obj
                     .get("url")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CliError::pipeline("fetch: object params must have 'url' field"))?
+                    .ok_or_else(|| {
+                        CliError::pipeline("fetch: object params must have 'url' field")
+                    })?
                     .to_string();
                 let method = obj
                     .get("method")
@@ -180,7 +181,11 @@ impl StepHandler for FetchStep {
                 let body = obj.get("body").cloned();
                 (url, method, headers, body)
             }
-            _ => return Err(CliError::pipeline("fetch: params must be a string URL or an object")),
+            _ => {
+                return Err(CliError::pipeline(
+                    "fetch: params must be a string URL or an object",
+                ))
+            }
         };
 
         // Check for per-item mode: data is array AND url references item
@@ -191,53 +196,56 @@ impl StepHandler for FetchStep {
             // Mode 3: per-item concurrent fetch
             let items = data.as_array().unwrap();
             let client = self.client.clone();
-            let results: Vec<Result<Value, CliError>> = stream::iter(items.iter().cloned().enumerate())
-                .map(|(index, item)| {
-                    let url_tmpl = url_template.clone();
-                    let method = method.clone();
-                    let headers_tmpl = headers_template.clone();
-                    let body_tmpl = body_template.clone();
-                    let args = args.clone();
-                    let data = data.clone();
-                    let client = client.clone();
-                    async move {
-                        let ctx = TemplateContext {
-                            args,
-                            data,
-                            item,
-                            index,
-                        };
-                        let rendered_url = render_template_str(&url_tmpl, &ctx)?;
-                        let url_str = rendered_url
-                            .as_str()
-                            .ok_or_else(|| CliError::pipeline("fetch: rendered URL is not a string"))?
-                            .to_string();
+            let results: Vec<Result<Value, CliError>> =
+                stream::iter(items.iter().cloned().enumerate())
+                    .map(|(index, item)| {
+                        let url_tmpl = url_template.clone();
+                        let method = method.clone();
+                        let headers_tmpl = headers_template.clone();
+                        let body_tmpl = body_template.clone();
+                        let args = args.clone();
+                        let data = data.clone();
+                        let client = client.clone();
+                        async move {
+                            let ctx = TemplateContext {
+                                args,
+                                data,
+                                item,
+                                index,
+                            };
+                            let rendered_url = render_template_str(&url_tmpl, &ctx)?;
+                            let url_str = rendered_url
+                                .as_str()
+                                .ok_or_else(|| {
+                                    CliError::pipeline("fetch: rendered URL is not a string")
+                                })?
+                                .to_string();
 
-                        // Render headers if present
-                        let rendered_headers = match &headers_tmpl {
-                            Some(h) => Some(render_template(h, &ctx)?),
-                            None => None,
-                        };
+                            // Render headers if present
+                            let rendered_headers = match &headers_tmpl {
+                                Some(h) => Some(render_template(h, &ctx)?),
+                                None => None,
+                            };
 
-                        // Render body if present
-                        let rendered_body = match &body_tmpl {
-                            Some(b) => Some(render_template(b, &ctx)?),
-                            None => None,
-                        };
+                            // Render body if present
+                            let rendered_body = match &body_tmpl {
+                                Some(b) => Some(render_template(b, &ctx)?),
+                                None => None,
+                            };
 
-                        do_request_with_client(
-                            &client,
-                            &url_str,
-                            &method,
-                            rendered_headers.as_ref(),
-                            rendered_body.as_ref(),
-                        )
-                        .await
-                    }
-                })
-                .buffer_unordered(10)
-                .collect()
-                .await;
+                            do_request_with_client(
+                                &client,
+                                &url_str,
+                                &method,
+                                rendered_headers.as_ref(),
+                                rendered_body.as_ref(),
+                            )
+                            .await
+                        }
+                    })
+                    .buffer_unordered(10)
+                    .collect()
+                    .await;
 
             // Collect results, propagating errors
             let mut output = Vec::with_capacity(results.len());

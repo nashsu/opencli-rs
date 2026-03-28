@@ -49,10 +49,7 @@ fn collect_yaml_files(base: &Path, dir: &Path, entries: &mut Vec<(String, String
             let path = entry.path();
             if path.is_dir() {
                 collect_yaml_files(base, &path, entries);
-            } else if path
-                .extension()
-                .map_or(false, |e| e == "yaml" || e == "yml")
-            {
+            } else if path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
                 let rel = path
                     .strip_prefix(base)
                     .unwrap()

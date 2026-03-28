@@ -18,14 +18,20 @@ use crate::types::{AdapterCandidate, ExploreOptions, SynthesizeOptions};
 /// Uses a Vec to preserve insertion order (matching TS object iteration order).
 fn capability_aliases() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
-        ("search",   vec!["search", "搜索", "查找", "query", "keyword"]),
-        ("hot",      vec!["hot", "热门", "热榜", "热搜", "popular", "top", "ranking"]),
+        ("search", vec!["search", "搜索", "查找", "query", "keyword"]),
+        (
+            "hot",
+            vec!["hot", "热门", "热榜", "热搜", "popular", "top", "ranking"],
+        ),
         ("trending", vec!["trending", "趋势", "流行", "discover"]),
-        ("feed",     vec!["feed", "动态", "关注", "时间线", "timeline", "following"]),
-        ("me",       vec!["profile", "me", "个人信息", "myinfo", "账号"]),
-        ("detail",   vec!["detail", "详情", "video", "article", "view"]),
+        (
+            "feed",
+            vec!["feed", "动态", "关注", "时间线", "timeline", "following"],
+        ),
+        ("me", vec!["profile", "me", "个人信息", "myinfo", "账号"]),
+        ("detail", vec!["detail", "详情", "video", "article", "view"]),
         ("comments", vec!["comments", "评论", "回复", "reply"]),
-        ("history",  vec!["history", "历史", "记录"]),
+        ("history", vec!["history", "历史", "记录"]),
         ("favorite", vec!["favorite", "收藏", "bookmark", "collect"]),
     ]
 }
@@ -115,9 +121,9 @@ fn select_candidate<'a>(
 
     // Try partial match
     let lower = goal_str.trim().to_lowercase();
-    let partial = candidates.iter().find(|c| {
-        c.name.to_lowercase().contains(&lower) || lower.contains(&c.name.to_lowercase())
-    });
+    let partial = candidates
+        .iter()
+        .find(|c| c.name.to_lowercase().contains(&lower) || lower.contains(&c.name.to_lowercase()));
 
     partial.or_else(|| candidates.first())
 }
@@ -162,14 +168,12 @@ pub async fn generate(
     let goal_for_select = if goal.is_empty() { None } else { Some(goal) };
     let selected = select_candidate(&candidates, goal_for_select);
 
-    selected
-        .cloned()
-        .ok_or_else(|| {
-            CliError::empty_result(format!(
-                "Could not generate adapter for {} with goal '{}'",
-                url, goal
-            ))
-        })
+    selected.cloned().ok_or_else(|| {
+        CliError::empty_result(format!(
+            "Could not generate adapter for {} with goal '{}'",
+            url, goal
+        ))
+    })
 }
 
 /// Full generate with structured result (for programmatic use).
@@ -194,9 +198,7 @@ pub async fn generate_full(
 
     // Step 2: Normalize goal
     let normalized_goal = normalize_goal(opts.goal.as_deref());
-    let effective_goal = normalized_goal
-        .as_deref()
-        .or(opts.goal.as_deref());
+    let effective_goal = normalized_goal.as_deref().or(opts.goal.as_deref());
 
     // Step 3: Synthesize candidates
     let synth_options = SynthesizeOptions {
@@ -301,7 +303,10 @@ mod tests {
     fn test_normalize_goal_english() {
         assert_eq!(normalize_goal(Some("search")), Some("search".to_string()));
         assert_eq!(normalize_goal(Some("hot")), Some("hot".to_string()));
-        assert_eq!(normalize_goal(Some("trending")), Some("trending".to_string()));
+        assert_eq!(
+            normalize_goal(Some("trending")),
+            Some("trending".to_string())
+        );
         assert_eq!(normalize_goal(Some("popular")), Some("hot".to_string()));
         assert_eq!(normalize_goal(Some("top")), Some("hot".to_string()));
         assert_eq!(normalize_goal(Some("ranking")), Some("hot".to_string()));

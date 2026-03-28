@@ -259,14 +259,39 @@ pub struct StrategyTestResult {
 
 /// URL parameters that should be ignored when normalizing endpoints (volatile/tracking).
 pub(crate) const VOLATILE_PARAMS: &[&str] = &[
-    "_", "t", "ts", "timestamp", "cb", "callback", "nonce", "rand", "random",
-    "spm_id_from", "vd_source", "from_spmid", "seid", "rt", "mid",
-    "web_location", "platform", "w_rid", "wts", "sign",
+    "_",
+    "t",
+    "ts",
+    "timestamp",
+    "cb",
+    "callback",
+    "nonce",
+    "rand",
+    "random",
+    "spm_id_from",
+    "vd_source",
+    "from_spmid",
+    "seid",
+    "rt",
+    "mid",
+    "web_location",
+    "platform",
+    "w_rid",
+    "wts",
+    "sign",
 ];
 
 /// Parameters that indicate search capability.
 pub(crate) const SEARCH_PARAMS: &[&str] = &[
-    "q", "query", "keyword", "keywords", "search", "search_query", "w", "wd", "kw",
+    "q",
+    "query",
+    "keyword",
+    "keywords",
+    "search",
+    "search_query",
+    "w",
+    "wd",
+    "kw",
 ];
 
 /// Parameters that indicate pagination.
@@ -276,19 +301,101 @@ pub(crate) const PAGINATION_PARAMS: &[&str] = &[
 
 /// Parameters that indicate limit/page-size.
 pub(crate) const LIMIT_PARAMS: &[&str] = &[
-    "limit", "ps", "size", "pageSize", "page_size", "count", "num", "per_page",
+    "limit",
+    "ps",
+    "size",
+    "pageSize",
+    "page_size",
+    "count",
+    "num",
+    "per_page",
 ];
 
 /// Well-known field roles and their common aliases.
 pub(crate) const FIELD_ROLES: &[(&str, &[&str])] = &[
-    ("title", &["title", "name", "text", "content", "desc", "description", "headline", "subject"]),
-    ("url", &["url", "uri", "link", "href", "permalink", "jump_url", "web_url", "share_url"]),
-    ("author", &["author", "username", "user_name", "nickname", "nick", "owner", "creator", "up_name", "uname"]),
-    ("score", &["score", "hot", "heat", "likes", "like_count", "view_count", "views", "play", "favorite_count", "reply_count"]),
-    ("time", &["time", "created_at", "publish_time", "pub_time", "date", "ctime", "mtime", "pubdate", "created"]),
-    ("id", &["id", "aid", "bvid", "mid", "uid", "oid", "note_id", "item_id"]),
-    ("cover", &["cover", "pic", "image", "thumbnail", "poster", "avatar"]),
-    ("category", &["category", "tag", "type", "tname", "channel", "section"]),
+    (
+        "title",
+        &[
+            "title",
+            "name",
+            "text",
+            "content",
+            "desc",
+            "description",
+            "headline",
+            "subject",
+        ],
+    ),
+    (
+        "url",
+        &[
+            "url",
+            "uri",
+            "link",
+            "href",
+            "permalink",
+            "jump_url",
+            "web_url",
+            "share_url",
+        ],
+    ),
+    (
+        "author",
+        &[
+            "author",
+            "username",
+            "user_name",
+            "nickname",
+            "nick",
+            "owner",
+            "creator",
+            "up_name",
+            "uname",
+        ],
+    ),
+    (
+        "score",
+        &[
+            "score",
+            "hot",
+            "heat",
+            "likes",
+            "like_count",
+            "view_count",
+            "views",
+            "play",
+            "favorite_count",
+            "reply_count",
+        ],
+    ),
+    (
+        "time",
+        &[
+            "time",
+            "created_at",
+            "publish_time",
+            "pub_time",
+            "date",
+            "ctime",
+            "mtime",
+            "pubdate",
+            "created",
+        ],
+    ),
+    (
+        "id",
+        &[
+            "id", "aid", "bvid", "mid", "uid", "oid", "note_id", "item_id",
+        ],
+    ),
+    (
+        "cover",
+        &["cover", "pic", "image", "thumbnail", "poster", "avatar"],
+    ),
+    (
+        "category",
+        &["category", "tag", "type", "tname", "channel", "section"],
+    ),
 ];
 
 /// Known site hostname aliases.

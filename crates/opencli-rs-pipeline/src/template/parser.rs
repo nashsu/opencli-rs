@@ -58,9 +58,8 @@ pub enum BinOpKind {
 }
 
 pub fn parse_expression(input: &str) -> Result<Expr, CliError> {
-    let pairs = ExprParser::parse(Rule::expression, input).map_err(|e| {
-        CliError::pipeline(format!("Template parse error: {e}"))
-    })?;
+    let pairs = ExprParser::parse(Rule::expression, input)
+        .map_err(|e| CliError::pipeline(format!("Template parse error: {e}")))?;
 
     let expr_pair = pairs
         .into_iter()
@@ -93,7 +92,10 @@ fn parse_any(pair: Pair<'_, Rule>) -> Result<Expr, CliError> {
             parse_any(inner)
         }
         Rule::expression => {
-            let inner = pair.into_inner().find(|p| p.as_rule() == Rule::pipe_expr).unwrap();
+            let inner = pair
+                .into_inner()
+                .find(|p| p.as_rule() == Rule::pipe_expr)
+                .unwrap();
             parse_pipe_expr(inner)
         }
         _ => Err(CliError::pipeline(format!(
@@ -278,8 +280,7 @@ fn parse_postfix_expr(pair: Pair<'_, Rule>) -> Result<Expr, CliError> {
                 expr = Expr::DotAccess(Box::new(expr), field);
             }
             Rule::bracket_access => {
-                let index_expr =
-                    parse_any(suffix.into_inner().next().unwrap())?;
+                let index_expr = parse_any(suffix.into_inner().next().unwrap())?;
                 expr = Expr::BracketAccess(Box::new(expr), Box::new(index_expr));
             }
             _ => {}
@@ -293,26 +294,23 @@ fn parse_primary(pair: Pair<'_, Rule>) -> Result<Expr, CliError> {
 
     match inner.as_rule() {
         Rule::float_lit => {
-            let val: f64 = inner.as_str().parse().map_err(|_| {
-                CliError::pipeline(format!("Invalid float: {}", inner.as_str()))
-            })?;
+            let val: f64 = inner
+                .as_str()
+                .parse()
+                .map_err(|_| CliError::pipeline(format!("Invalid float: {}", inner.as_str())))?;
             Ok(Expr::FloatLit(val))
         }
         Rule::int_lit => {
-            let val: i64 = inner.as_str().parse().map_err(|_| {
-                CliError::pipeline(format!("Invalid integer: {}", inner.as_str()))
-            })?;
+            let val: i64 = inner
+                .as_str()
+                .parse()
+                .map_err(|_| CliError::pipeline(format!("Invalid integer: {}", inner.as_str())))?;
             Ok(Expr::IntLit(val))
         }
         Rule::bool_lit => Ok(Expr::BoolLit(inner.as_str() == "true")),
         Rule::null_lit => Ok(Expr::NullLit),
         Rule::string_lit => {
-            let s = inner
-                .into_inner()
-                .next()
-                .unwrap()
-                .as_str()
-                .to_string();
+            let s = inner.into_inner().next().unwrap().as_str().to_string();
             Ok(Expr::StringLit(s))
         }
         Rule::func_call => {

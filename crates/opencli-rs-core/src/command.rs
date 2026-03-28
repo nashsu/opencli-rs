@@ -58,8 +58,16 @@ impl CliCommand {
         // Check if pipeline contains browser steps
         if let Some(ref pipeline) = self.pipeline {
             const BROWSER_STEPS: &[&str] = &[
-                "navigate", "click", "type", "wait", "press",
-                "evaluate", "snapshot", "screenshot", "intercept", "tap",
+                "navigate",
+                "click",
+                "type",
+                "wait",
+                "press",
+                "evaluate",
+                "snapshot",
+                "screenshot",
+                "intercept",
+                "tap",
             ];
             for step in pipeline {
                 if let Some(obj) = step.as_object() {

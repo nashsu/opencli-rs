@@ -33,7 +33,8 @@ pub fn validate_args(args: &[String]) -> Result<(), CliError> {
                     ),
                     suggestions: vec![
                         "Shell operators are not allowed in external CLI arguments".to_string(),
-                        "If you need piping, run the external CLI directly in your shell".to_string(),
+                        "If you need piping, run the external CLI directly in your shell"
+                            .to_string(),
                     ],
                 });
             }
@@ -55,10 +56,14 @@ pub async fn execute_external_cli(
 
     if !is_binary_installed(binary) {
         return Err(CliError::CommandExecution {
-            message: format!("External CLI '{}' not found: binary '{}' is not installed", name, binary),
-            suggestions: vec![
-                format!("Install '{}' and make sure it is on your PATH", binary),
-            ],
+            message: format!(
+                "External CLI '{}' not found: binary '{}' is not installed",
+                name, binary
+            ),
+            suggestions: vec![format!(
+                "Install '{}' and make sure it is on your PATH",
+                binary
+            )],
             source: None,
         });
     }

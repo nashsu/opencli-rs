@@ -15,8 +15,10 @@ use tracing::{debug, error};
 
 use crate::dom_helpers;
 
-type WsSink =
-    futures::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>;
+type WsSink = futures::stream::SplitSink<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    Message,
+>;
 
 /// Direct Chrome DevTools Protocol page client via WebSocket.
 ///
@@ -46,9 +48,7 @@ impl CdpPage {
                     Ok(Message::Text(text)) => {
                         if let Ok(json) = serde_json::from_str::<Value>(&text) {
                             if let Some(id) = json.get("id").and_then(|v| v.as_u64()) {
-                                if let Some(tx) =
-                                    reader_pending.write().await.remove(&id)
-                                {
+                                if let Some(tx) = reader_pending.write().await.remove(&id) {
                                     let _ = tx.send(json);
                                 }
                             } else {
@@ -90,7 +90,7 @@ impl CdpPage {
 
         {
             let mut ws = self.ws_write.lock().await;
-            ws.send(Message::Text(msg.to_string().into()))
+            ws.send(Message::Text(msg.to_string()))
                 .await
                 .map_err(|e| CliError::browser_connect(format!("CDP send error: {e}")))?;
         }
@@ -215,9 +215,7 @@ impl IPage for CdpPage {
     }
 
     async fn cookies(&self, _options: Option<CookieOptions>) -> Result<Vec<Cookie>, CliError> {
-        let result = self
-            .send_cdp("Network.getCookies", json!({}))
-            .await?;
+        let result = self.send_cdp("Network.getCookies", json!({})).await?;
         let cookies_val = result.get("cookies").cloned().unwrap_or(json!([]));
         let cookies: Vec<Cookie> = serde_json::from_value(cookies_val).unwrap_or_default();
         Ok(cookies)
@@ -267,10 +265,7 @@ impl IPage for CdpPage {
 
     async fn tabs(&self) -> Result<Vec<TabInfo>, CliError> {
         let result = self.send_cdp("Target.getTargets", json!({})).await?;
-        let targets = result
-            .get("targetInfos")
-            .cloned()
-            .unwrap_or(json!([]));
+        let targets = result.get("targetInfos").cloned().unwrap_or(json!([]));
         let mut tabs = Vec::new();
         if let Some(arr) = targets.as_array() {
             for t in arr {

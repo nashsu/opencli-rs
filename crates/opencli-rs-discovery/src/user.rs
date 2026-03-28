@@ -29,10 +29,7 @@ fn scan_yaml_dir(
         let path = entry.path();
         if path.is_dir() {
             scan_yaml_dir(&path, registry, count)?;
-        } else if path
-            .extension()
-            .map_or(false, |e| e == "yaml" || e == "yml")
-        {
+        } else if path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
             let content = std::fs::read_to_string(&path)?;
             match parse_yaml_adapter(&content) {
                 Ok(cmd) => {

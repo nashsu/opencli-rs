@@ -10,9 +10,6 @@ use serde_json::Value;
 use evaluator::evaluate;
 use parser::parse_expression;
 
-/// Regex-like pattern for `${{ expr }}`.
-/// We use a simple manual scanner instead of pulling in regex.
-
 /// Render a Value that may contain template strings.
 /// If Value is a String containing `${{ }}`, evaluate it.
 /// If Value is an Object/Array, recursively render all string values.
@@ -201,43 +198,35 @@ mod tests {
     #[test]
     fn test_fallback() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ item.subtitle || \"N/A\" }}", &ctx).unwrap();
+        let result = render_template_str("${{ item.subtitle || \"N/A\" }}", &ctx).unwrap();
         assert_eq!(result, Value::String("N/A".to_string()));
     }
 
     #[test]
     fn test_partial_interpolation() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("https://api.com/${{ item.id }}.json", &ctx).unwrap();
-        assert_eq!(
-            result,
-            Value::String("https://api.com/42.json".to_string())
-        );
+        let result = render_template_str("https://api.com/${{ item.id }}.json", &ctx).unwrap();
+        assert_eq!(result, Value::String("https://api.com/42.json".to_string()));
     }
 
     #[test]
     fn test_ternary() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ item.active ? \"yes\" : \"no\" }}", &ctx).unwrap();
+        let result = render_template_str("${{ item.active ? \"yes\" : \"no\" }}", &ctx).unwrap();
         assert_eq!(result, Value::String("yes".to_string()));
     }
 
     #[test]
     fn test_filter_chain() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ item.name | lower | trim }}", &ctx).unwrap();
+        let result = render_template_str("${{ item.name | lower | trim }}", &ctx).unwrap();
         assert_eq!(result, Value::String("hello world".to_string()));
     }
 
     #[test]
     fn test_math_min() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ Math.min(args.limit + 10, 50) }}", &ctx).unwrap();
+        let result = render_template_str("${{ Math.min(args.limit + 10, 50) }}", &ctx).unwrap();
         assert_eq!(result, Value::Number(30.into()));
     }
 
@@ -251,8 +240,7 @@ mod tests {
     #[test]
     fn test_logical_and() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ item.title && !item.deleted }}", &ctx).unwrap();
+        let result = render_template_str("${{ item.title && !item.deleted }}", &ctx).unwrap();
         assert_eq!(result, Value::Bool(true));
     }
 
@@ -289,8 +277,7 @@ mod tests {
     #[test]
     fn test_filter_join() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ item.tags | join(\", \") }}", &ctx).unwrap();
+        let result = render_template_str("${{ item.tags | join(\", \") }}", &ctx).unwrap();
         assert_eq!(result, Value::String("rust, cli".to_string()));
     }
 
@@ -323,10 +310,7 @@ mod tests {
     fn test_filter_json() {
         let ctx = make_ctx();
         let result = render_template_str("${{ item.author | json }}", &ctx).unwrap();
-        assert_eq!(
-            result,
-            Value::String("{\"name\":\"Alice\"}".to_string())
-        );
+        assert_eq!(result, Value::String("{\"name\":\"Alice\"}".to_string()));
     }
 
     #[test]
@@ -360,30 +344,23 @@ mod tests {
     #[test]
     fn test_filter_replace() {
         let ctx = make_ctx();
-        let result = render_template_str(
-            "${{ item.title | replace(\"World\", \"Rust\") }}",
-            &ctx,
-        )
-        .unwrap();
+        let result =
+            render_template_str("${{ item.title | replace(\"World\", \"Rust\") }}", &ctx).unwrap();
         assert_eq!(result, Value::String("Hello Rust".to_string()));
     }
 
     #[test]
     fn test_filter_default() {
         let ctx = make_ctx();
-        let result = render_template_str(
-            "${{ item.subtitle | default(\"fallback\") }}",
-            &ctx,
-        )
-        .unwrap();
+        let result =
+            render_template_str("${{ item.subtitle | default(\"fallback\") }}", &ctx).unwrap();
         assert_eq!(result, Value::String("fallback".to_string()));
     }
 
     #[test]
     fn test_math_max() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ Math.max(5, 10) }}", &ctx).unwrap();
+        let result = render_template_str("${{ Math.max(5, 10) }}", &ctx).unwrap();
         assert_eq!(result, Value::Number(10.into()));
     }
 
@@ -404,8 +381,7 @@ mod tests {
     #[test]
     fn test_parentheses() {
         let ctx = make_ctx();
-        let result =
-            render_template_str("${{ (index + 1) * 2 }}", &ctx).unwrap();
+        let result = render_template_str("${{ (index + 1) * 2 }}", &ctx).unwrap();
         assert_eq!(result, Value::Number(2.into()));
     }
 
@@ -433,15 +409,9 @@ mod tests {
     #[test]
     fn test_multiple_interpolations() {
         let ctx = make_ctx();
-        let result = render_template_str(
-            "${{ item.title }} by ${{ item.author.name }}",
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(
-            result,
-            Value::String("Hello World by Alice".to_string())
-        );
+        let result =
+            render_template_str("${{ item.title }} by ${{ item.author.name }}", &ctx).unwrap();
+        assert_eq!(result, Value::String("Hello World by Alice".to_string()));
     }
 
     #[test]

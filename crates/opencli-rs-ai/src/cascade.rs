@@ -88,11 +88,7 @@ fn build_fetch_probe_js(url: &str, credentials: bool, extract_csrf: bool) -> Str
 
 /// Probe an endpoint with a specific strategy.
 /// Returns whether the probe succeeded and basic response info.
-pub async fn probe_endpoint(
-    page: &dyn IPage,
-    url: &str,
-    strategy: Strategy,
-) -> StrategyTestResult {
+pub async fn probe_endpoint(page: &dyn IPage, url: &str, strategy: Strategy) -> StrategyTestResult {
     let result = match strategy {
         Strategy::Public => {
             // PUBLIC: plain fetch, no credentials
@@ -163,10 +159,7 @@ async fn eval_probe(page: &dyn IPage, js: &str, strategy: Strategy) -> StrategyT
 ///
 /// Confidence: 1.0 for PUBLIC, 0.9 for COOKIE, 0.8 for HEADER (simpler = more confident).
 /// If none works, defaults to COOKIE with 0.3 confidence.
-pub async fn cascade(
-    page: &dyn IPage,
-    api_url: &str,
-) -> Result<CascadeResult, CliError> {
+pub async fn cascade(page: &dyn IPage, api_url: &str) -> Result<CascadeResult, CliError> {
     // Don't auto-try INTERCEPT/UI -- stop at HEADER
     let max_idx = CASCADE_ORDER
         .iter()
@@ -267,7 +260,11 @@ mod tests {
 
     #[test]
     fn test_probe_js_url_escaping() {
-        let js = build_fetch_probe_js("https://api.example.com/data?q=hello&limit=10", false, false);
+        let js = build_fetch_probe_js(
+            "https://api.example.com/data?q=hello&limit=10",
+            false,
+            false,
+        );
         assert!(js.contains("api.example.com"));
     }
 

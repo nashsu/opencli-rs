@@ -31,9 +31,7 @@ pub fn parse_yaml_adapter(content: &str) -> Result<CliCommand, CliError> {
 
     // Parse strategy (default: public)
     let strategy = match raw.get("strategy").and_then(|v| v.as_str()) {
-        Some(s) => {
-            serde_json::from_value(Value::String(s.to_string())).unwrap_or(Strategy::Public)
-        }
+        Some(s) => serde_json::from_value(Value::String(s.to_string())).unwrap_or(Strategy::Public),
         None => Strategy::Public,
     };
 
@@ -52,10 +50,7 @@ pub fn parse_yaml_adapter(content: &str) -> Result<CliCommand, CliError> {
         .unwrap_or_default();
 
     // Pipeline is stored as-is (Vec<Value>)
-    let pipeline = raw
-        .get("pipeline")
-        .and_then(|v| v.as_array())
-        .cloned();
+    let pipeline = raw.get("pipeline").and_then(|v| v.as_array()).cloned();
 
     Ok(CliCommand {
         site,
@@ -65,10 +60,7 @@ pub fn parse_yaml_adapter(content: &str) -> Result<CliCommand, CliError> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        domain: raw
-            .get("domain")
-            .and_then(|v| v.as_str())
-            .map(String::from),
+        domain: raw.get("domain").and_then(|v| v.as_str()).map(String::from),
         strategy,
         browser: raw
             .get("browser")

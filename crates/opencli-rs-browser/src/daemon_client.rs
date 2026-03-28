@@ -51,7 +51,9 @@ impl DaemonClient {
 
                     if status.is_success() {
                         let daemon_result: DaemonResult = resp.json().await.map_err(|e| {
-                            CliError::browser_connect(format!("Failed to parse daemon response: {e}"))
+                            CliError::browser_connect(format!(
+                                "Failed to parse daemon response: {e}"
+                            ))
                         })?;
                         if daemon_result.ok {
                             return Ok(daemon_result.data.unwrap_or(Value::Null));

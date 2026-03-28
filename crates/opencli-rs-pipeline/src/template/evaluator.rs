@@ -99,11 +99,7 @@ pub fn evaluate(expr: &Expr, ctx: &TemplateContext) -> Result<Value, CliError> {
             }
         }
 
-        Expr::Pipe {
-            expr,
-            filter,
-            args,
-        } => {
+        Expr::Pipe { expr, filter, args } => {
             let val = evaluate(expr, ctx)?;
             let eval_args: Vec<Value> = args
                 .iter()
@@ -137,12 +133,8 @@ fn resolve_ident(name: &str, ctx: &TemplateContext) -> Result<Value, CliError> {
 fn access_field(val: &Value, field: &str) -> Value {
     match val {
         Value::Object(map) => map.get(field).cloned().unwrap_or(Value::Null),
-        Value::Array(arr) if field == "length" => {
-            Value::Number(arr.len().into())
-        }
-        Value::String(s) if field == "length" => {
-            Value::Number(s.len().into())
-        }
+        Value::Array(arr) if field == "length" => Value::Number(arr.len().into()),
+        Value::String(s) if field == "length" => Value::Number(s.len().into()),
         _ => Value::Null,
     }
 }
@@ -217,22 +209,14 @@ fn eval_binop(op: &BinOpKind, left: &Value, right: &Value) -> Result<Value, CliE
         }
         BinOpKind::Sub => arith(left, right, |a, b| a - b),
         BinOpKind::Mul => arith(left, right, |a, b| a * b),
-        BinOpKind::Div => arith(left, right, |a, b| {
-            if b == 0.0 {
-                f64::NAN
-            } else {
-                a / b
-            }
-        }),
-        BinOpKind::Mod => arith(left, right, |a, b| {
-            if b == 0.0 {
-                f64::NAN
-            } else {
-                a % b
-            }
-        }),
-        BinOpKind::Gt => Ok(Value::Bool(cmp_values(left, right) == Some(std::cmp::Ordering::Greater))),
-        BinOpKind::Lt => Ok(Value::Bool(cmp_values(left, right) == Some(std::cmp::Ordering::Less))),
+        BinOpKind::Div => arith(left, right, |a, b| if b == 0.0 { f64::NAN } else { a / b }),
+        BinOpKind::Mod => arith(left, right, |a, b| if b == 0.0 { f64::NAN } else { a % b }),
+        BinOpKind::Gt => Ok(Value::Bool(
+            cmp_values(left, right) == Some(std::cmp::Ordering::Greater),
+        )),
+        BinOpKind::Lt => Ok(Value::Bool(
+            cmp_values(left, right) == Some(std::cmp::Ordering::Less),
+        )),
         BinOpKind::Gte => Ok(Value::Bool(matches!(
             cmp_values(left, right),
             Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)

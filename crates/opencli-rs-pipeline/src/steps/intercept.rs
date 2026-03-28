@@ -47,7 +47,9 @@ impl StepHandler for InterceptStep {
                 let rendered = render_template_str(s, &ctx)?;
                 let pat = rendered
                     .as_str()
-                    .ok_or_else(|| CliError::pipeline("intercept: pattern must resolve to a string"))?
+                    .ok_or_else(|| {
+                        CliError::pipeline("intercept: pattern must resolve to a string")
+                    })?
                     .to_string();
                 (pat, 5000u64, false)
             }
@@ -59,7 +61,9 @@ impl StepHandler for InterceptStep {
                 let rendered = render_template_str(pat_raw, &ctx)?;
                 let pat = rendered
                     .as_str()
-                    .ok_or_else(|| CliError::pipeline("intercept: pattern must resolve to a string"))?
+                    .ok_or_else(|| {
+                        CliError::pipeline("intercept: pattern must resolve to a string")
+                    })?
                     .to_string();
                 let wait = obj
                     .get("wait")
@@ -96,9 +100,7 @@ impl StepHandler for InterceptStep {
         let requests = pg.get_intercepted_requests().await?;
         let result: Vec<Value> = requests
             .into_iter()
-            .map(|r| {
-                serde_json::to_value(&r).unwrap_or(Value::Null)
-            })
+            .map(|r| serde_json::to_value(&r).unwrap_or(Value::Null))
             .collect();
 
         Ok(Value::Array(result))

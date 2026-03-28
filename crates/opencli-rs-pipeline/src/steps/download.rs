@@ -61,11 +61,17 @@ impl StepHandler for DownloadStep {
             .unwrap_or("media");
 
         if download_type == "article" {
-            return execute_article_download(obj.unwrap_or(&serde_json::Map::new()), &ctx, data).await;
+            return execute_article_download(obj.unwrap_or(&serde_json::Map::new()), &ctx, data)
+                .await;
         }
 
         if download_type == "twitter-media" || download_type == "media-batch" {
-            return execute_media_batch_download(obj.unwrap_or(&serde_json::Map::new()), &ctx, data).await;
+            return execute_media_batch_download(
+                obj.unwrap_or(&serde_json::Map::new()),
+                &ctx,
+                data,
+            )
+            .await;
         }
 
         // Default: metadata-only download (extract URLs and annotate)
@@ -81,14 +87,28 @@ impl StepHandler for DownloadStep {
             _ => serde_json::Map::new(),
         };
 
-        result.insert("download_type".to_string(), Value::String(download_type.to_string()));
+        result.insert(
+            "download_type".to_string(),
+            Value::String(download_type.to_string()),
+        );
         if let Some(ref u) = url {
-            let filename = u.rsplit('/').next().unwrap_or("download")
-                .split('?').next().unwrap_or("download");
+            let filename = u
+                .rsplit('/')
+                .next()
+                .unwrap_or("download")
+                .split('?')
+                .next()
+                .unwrap_or("download");
             result.insert("download_url".to_string(), Value::String(u.clone()));
-            result.insert("download_path".to_string(), Value::String(filename.to_string()));
+            result.insert(
+                "download_path".to_string(),
+                Value::String(filename.to_string()),
+            );
         }
-        result.insert("download_status".to_string(), Value::String("pending".to_string()));
+        result.insert(
+            "download_status".to_string(),
+            Value::String("pending".to_string()),
+        );
 
         Ok(Value::Object(result))
     }
@@ -100,27 +120,59 @@ async fn execute_article_download(
     ctx: &TemplateContext,
     data: &Value,
 ) -> Result<Value, CliError> {
-    let title = params.get("title")
+    let title = params
+        .get("title")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .or_else(|| data.get("title").and_then(|v| v.as_str()).map(String::from))
         .unwrap_or_else(|| "article".to_string());
 
-    let output_dir = params.get("output")
+    let output_dir = params
+        .get("output")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .unwrap_or_else(|| "./articles".to_string());
 
-    let filename = params.get("filename")
+    let filename = params
+        .get("filename")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
-        .or_else(|| data.get("filename").and_then(|v| v.as_str()).map(String::from))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
+        .or_else(|| {
+            data.get("filename")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        })
         .unwrap_or_else(|| "article.md".to_string());
 
-    let mut content = params.get("content")
+    let mut content = params
+        .get("content")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
-        .or_else(|| data.get("content").and_then(|v| v.as_str()).map(String::from))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
+        .or_else(|| {
+            data.get("content")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default();
 
     if content.is_empty() {
@@ -133,16 +185,32 @@ async fn execute_article_download(
     }
 
     // Create article directory (output/safe_title/)
-    let safe_title: String = title.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
-        .collect::<String>().trim().chars().take(80).collect();
+    let safe_title: String = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .chars()
+        .take(80)
+        .collect();
     let article_dir = format!("{}/{}", output_dir, safe_title);
     let _ = std::fs::create_dir_all(&article_dir);
 
     // Download images if present in data
-    let image_urls: Vec<String> = data.get("imageUrls")
+    let image_urls: Vec<String> = data
+        .get("imageUrls")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     if !image_urls.is_empty() {
@@ -160,21 +228,32 @@ async fn execute_article_download(
         let mut img_index = 0;
 
         for raw_url in &image_urls {
-            if seen.contains(raw_url.as_str()) { continue; }
+            if seen.contains(raw_url.as_str()) {
+                continue;
+            }
             seen.insert(raw_url.as_str());
             img_index += 1;
 
             let mut img_url = raw_url.clone();
-            if img_url.starts_with("//") { img_url = format!("https:{}", img_url); }
+            if img_url.starts_with("//") {
+                img_url = format!("https:{}", img_url);
+            }
 
             // Detect extension
             let ext = if let Some(m) = img_url.find("wx_fmt=") {
-                img_url[m + 7..].split(&['&', '?', ' '][..]).next().unwrap_or("png").to_string()
+                img_url[m + 7..]
+                    .split(&['&', '?', ' '][..])
+                    .next()
+                    .unwrap_or("png")
+                    .to_string()
             } else {
-                img_url.rsplit('.').next()
+                img_url
+                    .rsplit('.')
+                    .next()
                     .and_then(|e| e.split(&['?', '#', '&'][..]).next())
                     .filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_alphanumeric()))
-                    .unwrap_or("jpg").to_string()
+                    .unwrap_or("jpg")
+                    .to_string()
             };
 
             let img_filename = format!("img_{:03}.{}", img_index, ext);
@@ -209,9 +288,13 @@ async fn execute_article_download(
     match std::fs::write(&file_path, &content) {
         Ok(_) => {
             let size = content.len();
-            let size_str = if size > 1_000_000 { format!("{:.1} MB", size as f64 / 1e6) }
-                else if size > 1000 { format!("{:.1} KB", size as f64 / 1e3) }
-                else { format!("{} bytes", size) };
+            let size_str = if size > 1_000_000 {
+                format!("{:.1} MB", size as f64 / 1e6)
+            } else if size > 1000 {
+                format!("{:.1} KB", size as f64 / 1e3)
+            } else {
+                format!("{} bytes", size)
+            };
 
             info!(title = %title, path = %file_path, size = %size_str, "Article saved");
             let author = data.get("author").and_then(|v| v.as_str()).unwrap_or("-");
@@ -225,14 +308,12 @@ async fn execute_article_download(
                 "images": image_urls.len(),
             }]))
         }
-        Err(e) => {
-            Ok(serde_json::json!([{
-                "title": title,
-                "author": "-",
-                "status": "failed",
-                "size": format!("Write error: {}", e)
-            }]))
-        }
+        Err(e) => Ok(serde_json::json!([{
+            "title": title,
+            "author": "-",
+            "status": "failed",
+            "size": format!("Write error: {}", e)
+        }])),
     }
 }
 
@@ -242,17 +323,30 @@ async fn execute_media_batch_download(
     ctx: &TemplateContext,
     data: &Value,
 ) -> Result<Value, CliError> {
-    let output_dir = params.get("output")
+    let output_dir = params
+        .get("output")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .unwrap_or_else(|| "./downloads".to_string());
 
-    let prefix = params.get("username")
+    let prefix = params
+        .get("username")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .unwrap_or_else(|| "media".to_string());
 
-    let items = data.get("items")
+    let items = data
+        .get("items")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -262,7 +356,9 @@ async fn execute_media_batch_download(
         if data.is_array() {
             return Ok(data.clone());
         }
-        return Ok(serde_json::json!([{ "index": 0, "type": "-", "status": "failed", "size": "No media items" }]));
+        return Ok(
+            serde_json::json!([{ "index": 0, "type": "-", "status": "failed", "size": "No media items" }]),
+        );
     }
 
     let _ = std::fs::create_dir_all(&output_dir);
@@ -276,37 +372,42 @@ async fn execute_media_batch_download(
     let mut results = Vec::new();
 
     for (i, item) in items.iter().enumerate() {
-        let media_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let media_type = item
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
-        if url.is_empty() { continue; }
+        if url.is_empty() {
+            continue;
+        }
 
         let idx = i + 1;
 
         if media_type == "image" {
             // Direct image download
-            let ext = if url.contains("format=png") { "png" }
-                else if url.contains("format=webp") { "webp" }
-                else { "jpg" };
+            let ext = if url.contains("format=png") {
+                "png"
+            } else if url.contains("format=webp") {
+                "webp"
+            } else {
+                "jpg"
+            };
             let filename = format!("{}_{:03}.{}", prefix, idx, ext);
             let filepath = format!("{}/{}", output_dir, filename);
 
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    match resp.bytes().await {
-                        Ok(bytes) => {
-                            if std::fs::write(&filepath, &bytes).is_ok() {
-                                let size = format_size(bytes.len());
-                                results.push(serde_json::json!({
-                                    "index": idx, "type": "image", "status": "ok", "size": size
-                                }));
-                                continue;
-                            }
+            if let Ok(resp) = client.get(url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if std::fs::write(&filepath, &bytes).is_ok() {
+                            let size = format_size(bytes.len());
+                            results.push(serde_json::json!({
+                                "index": idx, "type": "image", "status": "ok", "size": size
+                            }));
+                            continue;
                         }
-                        _ => {}
                     }
                 }
-                _ => {}
             }
             results.push(serde_json::json!({
                 "index": idx, "type": "image", "status": "failed", "size": "-"
@@ -316,22 +417,18 @@ async fn execute_media_batch_download(
             let filename = format!("{}_{:03}.mp4", prefix, idx);
             let filepath = format!("{}/{}", output_dir, filename);
 
-            match client.get(url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    match resp.bytes().await {
-                        Ok(bytes) => {
-                            if std::fs::write(&filepath, &bytes).is_ok() {
-                                let size = format_size(bytes.len());
-                                results.push(serde_json::json!({
-                                    "index": idx, "type": "video", "status": "ok", "size": size
-                                }));
-                                continue;
-                            }
+            if let Ok(resp) = client.get(url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if std::fs::write(&filepath, &bytes).is_ok() {
+                            let size = format_size(bytes.len());
+                            results.push(serde_json::json!({
+                                "index": idx, "type": "video", "status": "ok", "size": size
+                            }));
+                            continue;
                         }
-                        _ => {}
                     }
                 }
-                _ => {}
             }
             results.push(serde_json::json!({
                 "index": idx, "type": "video", "status": "failed", "size": "-"
@@ -342,7 +439,15 @@ async fn execute_media_batch_download(
             let filepath = format!("{}/{}", output_dir, filename);
 
             let status = tokio::process::Command::new("yt-dlp")
-                .args(["-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", &filepath, url])
+                .args([
+                    "-f",
+                    "best[ext=mp4]/best",
+                    "--merge-output-format",
+                    "mp4",
+                    "-o",
+                    &filepath,
+                    url,
+                ])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
@@ -367,7 +472,9 @@ async fn execute_media_batch_download(
     }
 
     if results.is_empty() {
-        return Ok(serde_json::json!([{ "index": 0, "type": "-", "status": "no media", "size": "-" }]));
+        return Ok(
+            serde_json::json!([{ "index": 0, "type": "-", "status": "no media", "size": "-" }]),
+        );
     }
 
     info!(count = results.len(), dir = %output_dir, "Media batch download complete");
@@ -375,10 +482,15 @@ async fn execute_media_batch_download(
 }
 
 fn format_size(bytes: usize) -> String {
-    if bytes > 1_000_000_000 { format!("{:.1} GB", bytes as f64 / 1e9) }
-    else if bytes > 1_000_000 { format!("{:.1} MB", bytes as f64 / 1e6) }
-    else if bytes > 1000 { format!("{:.1} KB", bytes as f64 / 1e3) }
-    else { format!("{} bytes", bytes) }
+    if bytes > 1_000_000_000 {
+        format!("{:.1} GB", bytes as f64 / 1e9)
+    } else if bytes > 1_000_000 {
+        format!("{:.1} MB", bytes as f64 / 1e6)
+    } else if bytes > 1000 {
+        format!("{:.1} KB", bytes as f64 / 1e3)
+    } else {
+        format!("{} bytes", bytes)
+    }
 }
 
 /// Execute yt-dlp download
@@ -388,14 +500,18 @@ async fn execute_ytdlp(
     data: &Value,
 ) -> Result<Value, CliError> {
     // Check if yt-dlp is installed
-    let ytdlp_ok = tokio::process::Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-        .arg("yt-dlp")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false);
+    let ytdlp_ok = tokio::process::Command::new(if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    })
+    .arg("yt-dlp")
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null())
+    .status()
+    .await
+    .map(|s| s.success())
+    .unwrap_or(false);
 
     if !ytdlp_ok {
         return Ok(serde_json::json!([{
@@ -405,39 +521,68 @@ async fn execute_ytdlp(
     }
 
     // Render template params
-    let url = params.get("url")
+    let url = params
+        .get("url")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .or_else(|| data.get("url").and_then(|v| v.as_str()).map(String::from))
         .ok_or_else(|| CliError::pipeline("download: missing url"))?;
 
-    let title = params.get("title")
+    let title = params
+        .get("title")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .or_else(|| data.get("title").and_then(|v| v.as_str()).map(String::from))
         .unwrap_or_else(|| "video".to_string());
 
-    let output_dir = params.get("output")
+    let output_dir = params
+        .get("output")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .unwrap_or_else(|| "./downloads".to_string());
 
-    let quality = params.get("quality")
+    let quality = params
+        .get("quality")
         .and_then(|v| v.as_str())
-        .map(|s| render_template_str(s, ctx).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| s.to_string()))
+        .map(|s| {
+            render_template_str(s, ctx)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| s.to_string())
+        })
         .unwrap_or_else(|| "best".to_string());
 
     // Extract cookies from data (set by evaluate step from document.cookie)
-    let cookies_str = data.get("cookies")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let cookies_str = data.get("cookies").and_then(|v| v.as_str()).unwrap_or("");
 
     // Create output directory
     let _ = std::fs::create_dir_all(&output_dir);
 
     // Sanitize title for filename
-    let safe_title: String = title.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ' ' { c } else { '_' })
+    let safe_title: String = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim()
         .chars()
@@ -459,7 +604,8 @@ async fn execute_ytdlp(
     // Write cookies to Netscape format temp file for yt-dlp
     let cookie_file = if !cookies_str.is_empty() {
         let cookie_path = format!("{}/.ytdlp_cookies.txt", output_dir);
-        let domain = url.strip_prefix("https://")
+        let domain = url
+            .strip_prefix("https://")
             .or_else(|| url.strip_prefix("http://"))
             .and_then(|s| s.split('/').next())
             .map(|host| {
@@ -491,10 +637,13 @@ async fn execute_ytdlp(
     };
 
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("-f").arg(format)
-        .arg("--merge-output-format").arg("mp4")
+    cmd.arg("-f")
+        .arg(format)
+        .arg("--merge-output-format")
+        .arg("mp4")
         .arg("--embed-thumbnail")
-        .arg("-o").arg(&output_path);
+        .arg("-o")
+        .arg(&output_path);
 
     if let Some(ref cf) = cookie_file {
         cmd.arg("--cookies").arg(cf);
@@ -512,9 +661,13 @@ async fn execute_ytdlp(
     let file_size = std::fs::metadata(&output_path)
         .map(|m| {
             let bytes = m.len();
-            if bytes > 1_000_000_000 { format!("{:.1} GB", bytes as f64 / 1e9) }
-            else if bytes > 1_000_000 { format!("{:.1} MB", bytes as f64 / 1e6) }
-            else { format!("{:.0} KB", bytes as f64 / 1e3) }
+            if bytes > 1_000_000_000 {
+                format!("{:.1} GB", bytes as f64 / 1e9)
+            } else if bytes > 1_000_000 {
+                format!("{:.1} MB", bytes as f64 / 1e6)
+            } else {
+                format!("{:.0} KB", bytes as f64 / 1e3)
+            }
         })
         .unwrap_or_else(|_| "-".to_string());
 
