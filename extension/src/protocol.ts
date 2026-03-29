@@ -48,8 +48,13 @@ export interface Result {
 /** Default daemon port */
 export const DAEMON_PORT = 19825;
 export const DAEMON_HOST = 'localhost';
-export const DAEMON_WS_URL = `ws://${DAEMON_HOST}:${DAEMON_PORT}/ext`;
 export const DAEMON_HTTP_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}`;
+export const DAEMON_EXT_KEY_URL = `${DAEMON_HTTP_URL}/ext-key`;
+
+/** Build the WebSocket URL with the given auth token. */
+export function buildDaemonWsUrl(token: string): string {
+  return `ws://${DAEMON_HOST}:${DAEMON_PORT}/ext?token=${encodeURIComponent(token)}`;
+}
 
 /** Base reconnect delay for extension WebSocket (ms) */
 export const WS_RECONNECT_BASE_DELAY = 2000;

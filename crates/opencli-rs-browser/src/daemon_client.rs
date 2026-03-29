@@ -3,12 +3,19 @@ use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, warn};
 
-use crate::types::{DaemonCommand, DaemonResult};
+use crate::{daemon::token_path, types::{DaemonCommand, DaemonResult}};
+
+/// Read the shared auth token written by the daemon on startup.
+/// Returns an empty string if the file is missing (daemon not yet started or old version).
+fn read_auth_token() -> String {
+    std::fs::read_to_string(token_path()).unwrap_or_default().trim().to_string()
+}
 
 /// HTTP client that communicates with the Daemon server.
 pub struct DaemonClient {
     base_url: String,
     client: reqwest::Client,
+    auth_token: String,
 }
 
 /// Retry delays for exponential backoff.
@@ -24,6 +31,7 @@ impl DaemonClient {
         Self {
             base_url: format!("http://127.0.0.1:{port}"),
             client,
+            auth_token: read_auth_token(),
         }
     }
 
@@ -40,7 +48,7 @@ impl DaemonClient {
             let result = self
                 .client
                 .post(&url)
-                .header("X-OpenCLI", "1")
+                .header("X-OpenCLI", &self.auth_token)
                 .json(&cmd)
                 .send()
                 .await;
@@ -122,8 +130,7 @@ impl DaemonClient {
     /// Compatible with both opencli-rs (`extension` field) and original opencli (`extensionConnected` field).
     pub async fn is_extension_connected(&self) -> bool {
         let url = format!("{}/status", self.base_url);
-        // Original opencli requires X-OpenCLI header on all requests
-        match self.client.get(&url).header("X-OpenCLI", "1").send().await {
+        match self.client.get(&url).header("X-OpenCLI", &self.auth_token).send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(json) = resp.json::<Value>().await {
                     // Our format: {"extension": bool}

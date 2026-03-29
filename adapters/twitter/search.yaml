@@ -2,7 +2,7 @@ site: twitter
 name: search
 description: Search Twitter/X for tweets
 domain: x.com
-strategy: intercept
+strategy: cookie
 browser: true
 
 args:
@@ -13,64 +13,123 @@ args:
   limit:
     type: int
     default: 15
+  product:
+    type: str
+    default: Top
 
 columns: [id, author, text, likes, views, url]
 
 pipeline:
   - navigate:
-      url: https://x.com/explore
-      settleMs: 3000
-
-  - intercept:
-      pattern: SearchTimeline
-      collect: false
+      url: https://x.com/home
+      settleMs: 4000
 
   - evaluate: |
-      (() => {
-        const searchUrl = '/search?q=' + encodeURIComponent(${{ args.query | json }}) + '&f=top';
-        window.history.pushState({}, '', searchUrl);
-        window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-      })()
+      (async () => {
+        const query = ${{ args.query | json }};
+        const limit = ${{ args.limit }};
 
-  - wait: 5
+        const ct0 = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('ct0='))?.split('=')[1] || null;
+        if (!ct0) throw new Error('Not logged into x.com (no ct0 cookie)');
 
-  - scroll:
-      times: 3
-      delayMs: 2000
+        const bearer = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+        const headers = {
+          'Authorization': 'Bearer ' + decodeURIComponent(bearer),
+          'X-Csrf-Token': ct0,
+          'X-Twitter-Auth-Type': 'OAuth2Session',
+          'X-Twitter-Active-User': 'yes',
+        };
 
-  - collect:
-      parse: |
-        (requests) => {
-          let results = [];
-          const seen = new Set();
-          for (const req of requests) {
+        // Scan page scripts to find current queryId (POST method works regardless of queryId version)
+        let queryId = 'GcXk9vN_d1jUfHNqLacXQA'; // fallback — POST doesn't require server-registered persisted query
+        try {
+          const scripts = Array.from(document.querySelectorAll('script[src]')).map(s => s.src);
+          for (const src of scripts) {
             try {
-              const insts = req?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions || [];
-              const addEntries = insts.find(i => i.type === 'TimelineAddEntries')
-                || insts.find(i => i.entries && Array.isArray(i.entries));
-              if (!addEntries?.entries) continue;
-              for (const entry of addEntries.entries) {
-                if (!entry.entryId.startsWith('tweet-')) continue;
-                let tweet = entry.content?.itemContent?.tweet_results?.result;
-                if (!tweet) continue;
-                if (tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
-                  tweet = tweet.tweet;
-                }
-                if (!tweet.rest_id || seen.has(tweet.rest_id)) continue;
-                seen.add(tweet.rest_id);
-                const tweetUser = tweet.core?.user_results?.result;
-                results.push({
-                  id: tweet.rest_id,
-                  author: tweetUser?.core?.screen_name || tweetUser?.legacy?.screen_name || 'unknown',
-                  text: tweet.note_tweet?.note_tweet_results?.result?.text || tweet.legacy?.full_text || '',
-                  likes: tweet.legacy?.favorite_count || 0,
-                  views: tweet.views?.count || '0',
-                  url: 'https://x.com/i/status/' + tweet.rest_id,
-                });
-              }
-            } catch (e) {}
+              const text = await fetch(src, { cache: 'no-store' }).then(r => r.text());
+              const m = text.match(/queryId:"([A-Za-z0-9_-]+)"[^}]{0,200}operationName:"SearchTimeline"/);
+              if (m) { queryId = m[1]; break; }
+            } catch {}
           }
-          return results;
+        } catch {}
+
+        const variables = {
+          rawQuery: query,
+          count: limit,
+          querySource: 'typed_query',
+          product: ${{ args.product | json }},
+          withGrokTranslatedBio: false,
+        };
+        const features = {
+          rweb_video_screen_enabled: false,
+          profile_label_improvements_pcf_label_in_post_enabled: true,
+          responsive_web_profile_redirect_enabled: false,
+          rweb_tipjar_consumption_enabled: false,
+          verified_phone_label_enabled: false,
+          creator_subscriptions_tweet_preview_api_enabled: true,
+          responsive_web_graphql_timeline_navigation_enabled: true,
+          responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+          premium_content_api_read_enabled: false,
+          communities_web_enable_tweet_community_results_fetch: true,
+          c9s_tweet_anatomy_moderator_badge_enabled: true,
+          articles_preview_enabled: true,
+          responsive_web_edit_tweet_api_enabled: true,
+          graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+          view_counts_everywhere_api_enabled: true,
+          longform_notetweets_consumption_enabled: true,
+          responsive_web_twitter_article_tweet_consumption_enabled: true,
+          freedom_of_speech_not_reach_fetch_enabled: true,
+          standardized_nudges_misinfo: true,
+          tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+          longform_notetweets_rich_text_read_enabled: true,
+          longform_notetweets_inline_media_enabled: false,
+          responsive_web_enhance_cards_enabled: false,
+        };
+
+        // Use POST — works even when GET with persisted queryId returns 404
+        const resp = await fetch('/i/api/graphql/' + queryId + '/SearchTimeline', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queryId, variables, features }),
+        });
+
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error('SearchTimeline HTTP ' + resp.status + ': ' + body.slice(0, 200));
         }
+        const data = await resp.json();
+
+        const instructions = data?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions || [];
+        const addEntries = instructions.find(i => i.type === 'TimelineAddEntries') || instructions.find(i => i.entries);
+        const entries = addEntries?.entries || [];
+
+        const results = [];
+        const seen = new Set();
+        for (const entry of entries) {
+          if (!entry.entryId?.startsWith('tweet-')) continue;
+          let tweet = entry.content?.itemContent?.tweet_results?.result;
+          if (!tweet) continue;
+          if (tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) tweet = tweet.tweet;
+          if (!tweet?.rest_id || seen.has(tweet.rest_id)) continue;
+          seen.add(tweet.rest_id);
+          const user = tweet.core?.user_results?.result;
+          results.push({
+            id: tweet.rest_id,
+            author: user?.core?.screen_name || user?.legacy?.screen_name || 'unknown',
+            text: tweet.note_tweet?.note_tweet_results?.result?.text || tweet.legacy?.full_text || '',
+            likes: tweet.legacy?.favorite_count || 0,
+            views: tweet.views?.count || '0',
+            url: 'https://x.com/i/status/' + tweet.rest_id,
+          });
+          if (results.length >= limit) break;
+        }
+
+        if (results.length === 0) {
+          throw new Error('No results found for: ' + query);
+        }
+
+        return results;
+      })()
 
   - limit: ${{ args.limit }}

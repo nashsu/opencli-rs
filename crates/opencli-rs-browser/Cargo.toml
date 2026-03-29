@@ -16,3 +16,6 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 axum = { version = "0.8", features = ["ws"] }
 uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

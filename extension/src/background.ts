@@ -6,12 +6,24 @@
  */
 
 import type { Command, Result } from './protocol';
-import { DAEMON_WS_URL, WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from './protocol';
+import { DAEMON_EXT_KEY_URL, buildDaemonWsUrl, WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from './protocol';
 import * as executor from './cdp';
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
+
+/** Fetch the WebSocket auth token from the daemon's /ext-key endpoint. */
+async function fetchExtToken(): Promise<string | null> {
+  try {
+    const resp = await fetch(DAEMON_EXT_KEY_URL);
+    if (!resp.ok) return null;
+    const json = await resp.json() as { token?: string };
+    return json.token ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Console log forwarding ──────────────────────────────────────────
 // Hook console.log/warn/error to forward logs to daemon via WebSocket.
@@ -34,11 +46,18 @@ console.error = (...args: unknown[]) => { _origError(...args); forwardLog('error
 
 // ─── WebSocket connection ────────────────────────────────────────────
 
-function connect(): void {
+async function connect(): Promise<void> {
   if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return;
 
+  const token = await fetchExtToken();
+  if (!token) {
+    // Daemon not running yet — retry later
+    scheduleReconnect();
+    return;
+  }
+
   try {
-    ws = new WebSocket(DAEMON_WS_URL);
+    ws = new WebSocket(buildDaemonWsUrl(token));
   } catch {
     scheduleReconnect();
     return;
@@ -177,7 +196,7 @@ function initialize(): void {
   initialized = true;
   chrome.alarms.create('keepalive', { periodInMinutes: 0.4 }); // ~24 seconds
   executor.registerListeners();
-  connect();
+  void connect();
   console.log('[opencli] OpenCLI extension initialized');
 }
 
@@ -190,7 +209,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'keepalive') connect();
+  if (alarm.name === 'keepalive') void connect();
 });
 
 // ─── Command dispatcher ─────────────────────────────────────────────
