@@ -1,6 +1,9 @@
 mod args;
 mod commands;
 mod execution;
+mod i18n;
+
+use i18n::t;
 
 use clap::{Arg, ArgAction, Command};
 use clap_complete::Shell;
@@ -121,8 +124,7 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
         )
         .subcommand(
             Command::new("auth")
-                .about("Save authentication token to config")
-                .arg(Arg::new("token").long("token").required(true).help("AutoCLI token (e.g. acli_xxxx)")),
+                .about("Authenticate with AutoCLI"),
         );
 
     app
@@ -140,14 +142,14 @@ fn save_adapter(site: &str, name: &str, yaml: &str) {
     let path = dir.join(format!("{}.yaml", name));
     match std::fs::write(&path, yaml) {
         Ok(_) => {
-            eprintln!("✅ Generated adapter: {} {}", site, name);
-            eprintln!("   Saved to: {}", path.display());
+            eprintln!("{} {} {}", t("✅ 已生成配置:", "✅ Generated adapter:"), site, name);
+            eprintln!("   {}{}", t("保存到: ", "Saved to: "), path.display());
             eprintln!();
-            eprintln!("   Run it now:");
+            eprintln!("   {}", t("运行命令:", "Run it now:"));
             eprintln!("   opencli-rs {} {}", site, name);
         }
         Err(e) => {
-            eprintln!("Generated adapter but failed to save: {}", e);
+            eprintln!("{}{}", t("生成成功但保存失败: ", "Generated adapter but failed to save: "), e);
             eprintln!();
             println!("{}", yaml);
         }
@@ -168,12 +170,9 @@ struct AdapterMatch {
 /// Returns Err with message on auth/server failure, Ok with matches on success.
 async fn search_existing_adapters(url: &str, token: &str) -> Result<Vec<AdapterMatch>, String> {
     let pattern = opencli_rs_ai::url_to_pattern(url);
-    let api_base = std::env::var("AUTOCLI_API_BASE")
-        .unwrap_or_else(|_| "http://127.0.0.1:8001".to_string());
+    let search_url = opencli_rs_ai::search_url(&pattern);
 
-    let search_url = format!("{}/api/sites/cli/search?url={}", api_base, urlencoding::encode(&pattern));
-
-    eprintln!("🔍 Searching for existing adapters...");
+    eprintln!("{}", t("🔍 搜索已有配置...", "🔍 Searching for existing adapters..."));
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -185,10 +184,10 @@ async fn search_existing_adapters(url: &str, token: &str) -> Result<Vec<AdapterM
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|_| "❌ 服务器连接失败，请稍后再试".to_string())?;
+        .map_err(|_| t("❌ 服务器连接失败，请稍后再试", "❌ Server connection failed, please try again later").to_string())?;
 
     if !resp.status().is_success() {
-        return Err(format!("❌ 服务器返回错误: {}", resp.status()));
+        return Err(format!("{}{}", t("❌ 服务器返回错误: ", "❌ Server error: "), resp.status()));
     }
 
     let body: serde_json::Value = resp.json().await
@@ -223,15 +222,14 @@ async fn upload_adapter(yaml: &str) {
     let token = match config.autocli_token {
         Some(t) => t,
         None => {
-            eprintln!("⏭️  No autocli-token configured, skipping upload. Run: opencli-rs auth --token <token>");
+            eprintln!("{}", t("⏭️  未配置 Token，跳过上传。运行: opencli-rs auth", "⏭️  No autocli-token configured, skipping upload. Run: opencli-rs auth"));
             return;
         }
     };
 
-    let api_url = std::env::var("AUTOCLI_API_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8001/api/sites/upload".to_string());
+    let api_url = opencli_rs_ai::upload_url();
 
-    eprintln!("☁️  Uploading adapter...");
+    eprintln!("{}", t("☁️  正在上传配置...", "☁️  Uploading adapter..."));
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -251,14 +249,14 @@ async fn upload_adapter(yaml: &str) {
     {
         Ok(resp) => {
             if resp.status().is_success() {
-                eprintln!("✅ Adapter uploaded successfully");
+                eprintln!("{}", t("✅ 配置上传成功", "✅ Adapter uploaded successfully"));
             } else {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
-                eprintln!("❌ Upload failed ({}): {}", status, &body[..body.len().min(200)]);
+                eprintln!("{}{}: {}", t("❌ 上传失败 ", "❌ Upload failed "), status, &body[..body.len().min(200)]);
             }
         }
-        Err(e) => { eprintln!("❌ Upload failed: {}", e); }
+        Err(e) => { eprintln!("{}{}", t("❌ 上传失败: ", "❌ Upload failed: "), e); }
     }
 }
 
@@ -367,16 +365,83 @@ async fn main() {
                 return;
             }
             "auth" => {
-                let token = site_matches.get_one::<String>("token").unwrap();
-                let mut config = opencli_rs_ai::load_config();
-                config.autocli_token = Some(token.clone());
-                match opencli_rs_ai::save_config(&config) {
-                    Ok(_) => {
-                        eprintln!("✅ Token saved to {}", opencli_rs_ai::config::config_path().display());
+                // Open browser to get token
+                let token_url = "https://autocli.ai/get-token";
+                eprintln!("{}", t(
+                    "🔑 请在浏览器中获取 Token:",
+                    "🔑 Get your token from the browser:"
+                ));
+                eprintln!("   {}", token_url);
+                eprintln!();
+
+                // Open default browser
+                let _ = if cfg!(target_os = "macos") {
+                    std::process::Command::new("open").arg(token_url).spawn()
+                } else if cfg!(target_os = "windows") {
+                    std::process::Command::new("cmd").args(["/C", "start", token_url]).spawn()
+                } else {
+                    std::process::Command::new("xdg-open").arg(token_url).spawn()
+                };
+
+                // Token input loop with verification
+                loop {
+                    let input = inquire::Text::new(t("请输入 Token:", "Enter your token:"))
+                        .prompt();
+
+                    let token = match input {
+                        Ok(t) => t.trim().to_string(),
+                        Err(_) => {
+                            eprintln!("{}", t("已取消", "Cancelled"));
+                            return;
+                        }
+                    };
+
+                    if token.is_empty() {
+                        eprintln!("{}", t("❌ Token 不能为空", "❌ Token cannot be empty"));
+                        continue;
                     }
-                    Err(e) => {
-                        eprintln!("❌ Failed to save token: {}", e);
-                        std::process::exit(1);
+
+                    // Verify token with server
+                    eprintln!("{}", t("🔍 验证 Token...", "🔍 Verifying token..."));
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(10))
+                        .build()
+                        .unwrap();
+
+                    let verify_url = "https://autocli.ai/api/auth/tokens/verify";
+                    let resp = client
+                        .post(verify_url)
+                        .header("Content-Type", "application/json")
+                        .json(&serde_json::json!({ "token": &token }))
+                        .send()
+                        .await;
+
+                    match resp {
+                        Ok(r) => {
+                            let body: serde_json::Value = r.json().await.unwrap_or_default();
+                            if body.get("status").and_then(|v| v.as_str()) == Some("valid") {
+                                // Save token
+                                let mut config = opencli_rs_ai::load_config();
+                                config.autocli_token = Some(token);
+                                match opencli_rs_ai::save_config(&config) {
+                                    Ok(_) => {
+                                        eprintln!("{}{}", t("✅ Token 已保存到 ", "✅ Token saved to "), opencli_rs_ai::config::config_path().display());
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{}{}", t("❌ Token 保存失败: ", "❌ Failed to save token: "), e);
+                                        std::process::exit(1);
+                                    }
+                                }
+                                break;
+                            } else {
+                                eprintln!("{}", t("❌ Token 无效，请重新输入", "❌ Invalid token, please try again"));
+                                continue;
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("{}", t("❌ 无法连接验证服务器，请检查网络后重试", "❌ Cannot connect to verification server, please check your network and try again"));
+                            continue;
+                        }
                     }
                 }
                 return;
@@ -463,7 +528,7 @@ async fn main() {
                             let token = match &config.autocli_token {
                                 Some(t) => t.clone(),
                                 None => {
-                                    eprintln!("❌ 未认证，请先运行: opencli-rs auth --token <token>");
+                                    eprintln!("{}", t("❌ 未认证，请先运行: opencli-rs auth", "❌ Not authenticated. Run first: opencli-rs auth"));
                                     let _ = page.close().await;
                                     std::process::exit(1);
                                 }
@@ -493,10 +558,11 @@ async fn main() {
                                         };
                                         format!("{} {} {}{}{}", tag, m.site_name, m.cmd_name, author, desc)
                                     }).collect();
-                                    options.push("🔄 重新生成 (使用 AI 分析)".to_string());
+                                    let regenerate_label = t("🔄 重新生成 (使用 AI 分析)", "🔄 Regenerate (using AI)").to_string();
+                                    options.push(regenerate_label.clone());
 
                                     let selection = inquire::Select::new(
-                                        "找到以下已有配置，请选择:",
+                                        t("找到以下已有配置，请选择:", "Existing adapters found, please select:"),
                                         options,
                                     ).prompt();
 
@@ -520,7 +586,7 @@ async fn main() {
                                             }
                                         }
                                         Err(_) => {
-                                            eprintln!("已取消");
+                                            eprintln!("{}", t("已取消", "Cancelled"));
                                             let _ = page.close().await;
                                             return;
                                         }
@@ -528,7 +594,7 @@ async fn main() {
                                 }
                                 Ok(_) => {
                                     // No matches found
-                                    eprintln!("📭 未找到已有配置，开始 AI 生成...");
+                                    eprintln!("{}", t("📭 未找到已有配置，开始 AI 生成...", "📭 No existing adapter found, starting AI generation..."));
                                     need_ai_generate = true;
                                 }
                                 Err(e) => {
@@ -543,24 +609,11 @@ async fn main() {
                                 return;
                             }
 
-                            // Step 2: AI generation
-                            if !config.llm.is_configured() {
-                                eprintln!("❌ LLM not configured. Create ~/.opencli-rs/config.json:");
-                                eprintln!("   {{");
-                                eprintln!("     \"llm\": {{");
-                                eprintln!("       \"endpoint\": \"https://api.openai.com/v1/chat/completions\",");
-                                eprintln!("       \"apikey\": \"sk-...\",");
-                                eprintln!("       \"modelname\": \"gpt-4o\"");
-                                eprintln!("     }}");
-                                eprintln!("   }}");
-                                let _ = page.close().await;
-                                std::process::exit(1);
-                            }
-
+                            // Step 2: AI generation via server API
                             let ai_result = opencli_rs_ai::generate_with_ai(
                                 page.as_ref(), url,
                                 goal.as_deref().unwrap_or("hot"),
-                                &config.llm,
+                                &token,
                             ).await;
                             let _ = page.close().await;
 

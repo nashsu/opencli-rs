@@ -159,6 +159,8 @@ Examples:
 
 **CRITICAL YAML FORMAT RULE:** Each pipeline step MUST have exactly ONE key.
 
+**Tags rule:** You MUST include a `tags` field with at least 3 English classification tags for the website. Tags should describe the site's category/domain, e.g. `[technology, programming, blog]`, `[video, entertainment, streaming]`, `[ecommerce, shopping, marketplace]`, `[news, media, finance]`, `[ai, machine-learning, cloud]`.
+
 Navigate uses a simple string URL — the system auto-detects when the page is fully loaded (no need for settleMs):
 ```yaml
 pipeline:
@@ -170,6 +172,7 @@ site: {site_name}
 name: {goal}
 description: {Chinese description of what this does}
 domain: {hostname}
+tags: [{tag1}, {tag2}, {tag3}]
 strategy: cookie
 browser: true
 

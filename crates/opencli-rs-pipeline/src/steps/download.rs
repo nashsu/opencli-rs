@@ -136,7 +136,7 @@ async fn execute_article_download(
     let safe_title: String = title.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
         .collect::<String>().trim().chars().take(80).collect();
-    let article_dir = format!("{}/{}", output_dir, safe_title);
+    let article_dir = std::path::PathBuf::from(output_dir).join(&safe_title).to_string_lossy().to_string();
     let _ = std::fs::create_dir_all(&article_dir);
 
     // Download images if present in data
@@ -146,7 +146,7 @@ async fn execute_article_download(
         .unwrap_or_default();
 
     if !image_urls.is_empty() {
-        let images_dir = format!("{}/images", article_dir);
+        let images_dir = std::path::PathBuf::from(&article_dir).join("images").to_string_lossy().to_string();
         let _ = std::fs::create_dir_all(&images_dir);
 
         let referer = data.get("referer").and_then(|v| v.as_str()).unwrap_or("");
@@ -178,7 +178,7 @@ async fn execute_article_download(
             };
 
             let img_filename = format!("img_{:03}.{}", img_index, ext);
-            let img_path = format!("{}/{}", images_dir, img_filename);
+            let img_path = std::path::PathBuf::from(&images_dir).join(&img_filename).to_string_lossy().to_string();
             let local_path = format!("images/{}", img_filename);
 
             let mut req = client.get(&img_url);
@@ -205,7 +205,7 @@ async fn execute_article_download(
     }
 
     // Write markdown file
-    let file_path = format!("{}/{}", article_dir, filename);
+    let file_path = std::path::PathBuf::from(&article_dir).join(&filename).to_string_lossy().to_string();
     match std::fs::write(&file_path, &content) {
         Ok(_) => {
             let size = content.len();
@@ -289,7 +289,7 @@ async fn execute_media_batch_download(
                 else if url.contains("format=webp") { "webp" }
                 else { "jpg" };
             let filename = format!("{}_{:03}.{}", prefix, idx, ext);
-            let filepath = format!("{}/{}", output_dir, filename);
+            let filepath = std::path::PathBuf::from(&output_dir).join(&filename).to_string_lossy().to_string();
 
             match client.get(url).send().await {
                 Ok(resp) if resp.status().is_success() => {
@@ -314,7 +314,7 @@ async fn execute_media_batch_download(
         } else if media_type == "video" {
             // Direct video download
             let filename = format!("{}_{:03}.mp4", prefix, idx);
-            let filepath = format!("{}/{}", output_dir, filename);
+            let filepath = std::path::PathBuf::from(&output_dir).join(&filename).to_string_lossy().to_string();
 
             match client.get(url).send().await {
                 Ok(resp) if resp.status().is_success() => {
@@ -339,7 +339,7 @@ async fn execute_media_batch_download(
         } else if media_type == "video-tweet" {
             // Use yt-dlp for tweet videos
             let filename = format!("{}_{:03}.mp4", prefix, idx);
-            let filepath = format!("{}/{}", output_dir, filename);
+            let filepath = std::path::PathBuf::from(&output_dir).join(&filename).to_string_lossy().to_string();
 
             let status = tokio::process::Command::new("yt-dlp")
                 .args(["-f", "best[ext=mp4]/best", "--merge-output-format", "mp4", "-o", &filepath, url])
@@ -452,13 +452,13 @@ async fn execute_ytdlp(
         _ => "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
     };
 
-    let output_path = format!("{}/{}.mp4", output_dir, safe_title);
+    let output_path = std::path::PathBuf::from(&output_dir).join(format!("{}.mp4", safe_title)).to_string_lossy().to_string();
 
     info!(url = %url, output = %output_path, "Downloading with yt-dlp");
 
     // Write cookies to Netscape format temp file for yt-dlp
     let cookie_file = if !cookies_str.is_empty() {
-        let cookie_path = format!("{}/.ytdlp_cookies.txt", output_dir);
+        let cookie_path = std::path::PathBuf::from(&output_dir).join(".ytdlp_cookies.txt").to_string_lossy().to_string();
         let domain = url.strip_prefix("https://")
             .or_else(|| url.strip_prefix("http://"))
             .and_then(|s| s.split('/').next())

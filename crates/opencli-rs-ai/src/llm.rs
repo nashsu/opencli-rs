@@ -1,37 +1,33 @@
 //! LLM client for AI-powered adapter generation.
-//! Supports OpenAI-compatible API (works with OpenAI, Anthropic via proxy, local models, etc.)
+//! Routes all requests through the AutoCLI server API.
 
 use opencli_rs_core::CliError;
 use serde_json::{json, Value};
 use tracing::{debug, info};
 
-use crate::config::LlmConfig;
+use crate::config::api_base;
 
 /// The system prompt for adapter generation, embedded at compile time.
 const SYSTEM_PROMPT: &str = include_str!("../prompts/generate-adapter.md");
 
-/// Send captured page data to LLM and get back a YAML adapter.
+/// Send captured page data to LLM via server API and get back a YAML adapter.
 pub async fn generate_with_llm(
-    config: &LlmConfig,
+    token: &str,
     captured_data: &Value,
     goal: &str,
     site: &str,
 ) -> Result<String, CliError> {
-    let endpoint = config.endpoint.as_deref()
-        .ok_or_else(|| CliError::config("LLM endpoint not configured. Set it in ~/.opencli-rs/config.json"))?;
-    let apikey = config.apikey.as_deref()
-        .ok_or_else(|| CliError::config("LLM API key not configured. Set it in ~/.opencli-rs/config.json"))?;
-    let model = config.modelname.as_deref()
-        .ok_or_else(|| CliError::config("LLM model name not configured. Set it in ~/.opencli-rs/config.json"))?;
+    let endpoint = format!("{}/api/ai/v1/chat/completions", api_base());
 
     let user_message = format!(
         "Generate an opencli-rs YAML adapter for site \"{}\" with goal \"{}\".\n\n\
         CRITICAL RULES:\n\
         1. The `name` field MUST be exactly \"{}\".\n\
-        2. Choose the best extraction approach: DOM scraping OR API calls. \
+        2. You MUST include a `tags` field with at least 3 English classification tags for the website (e.g. tags: [technology, programming, blog]).\n\
+        3. Choose the best extraction approach: DOM scraping OR API calls. \
         If the HTML has structured data, use DOM scraping. \
         If you use API calls, you MUST strictly replicate the original page's request — same HTTP method, same headers, same body, same URL (use Performance API to find it).\n\
-        3. Only add required args when the goal genuinely needs user input.\n\n\
+        4. Only add required args when the goal genuinely needs user input.\n\n\
         Here is the captured data from the web page:\n\n```json\n{}\n```\n\n\
         Return ONLY the YAML content, no explanation, no markdown fencing. Just the raw YAML.",
         site, goal, goal,
@@ -39,43 +35,26 @@ pub async fn generate_with_llm(
             .unwrap_or_else(|_| captured_data.to_string())
     );
 
-    info!(endpoint = endpoint, model = model, "Calling LLM for adapter generation");
+    info!(endpoint = %endpoint, "Calling LLM for adapter generation");
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| CliError::Http { message: format!("Failed to create HTTP client: {}", e), suggestions: vec![], source: None })?;
 
-    // Detect API type from endpoint URL and build request accordingly
-    let (request_body, auth_header) = if endpoint.contains("anthropic") {
-        // Anthropic Messages API
-        let body = json!({
-            "model": model,
-            "max_tokens": 4096,
-            "system": SYSTEM_PROMPT,
-            "messages": [
-                { "role": "user", "content": user_message }
-            ]
-        });
-        (body, ("x-api-key", apikey.to_string()))
-    } else {
-        // OpenAI-compatible API (OpenAI, Azure, local models, etc.)
-        let body = json!({
-            "model": model,
-            "max_tokens": 4096,
-            "messages": [
-                { "role": "system", "content": SYSTEM_PROMPT },
-                { "role": "user", "content": user_message }
-            ]
-        });
-        (body, ("Authorization", format!("Bearer {}", apikey)))
-    };
+    let request_body = json!({
+        "messages": [
+            { "role": "system", "content": SYSTEM_PROMPT },
+            { "role": "user", "content": user_message }
+        ],
+        "stream": false
+    });
 
     debug!(body_size = request_body.to_string().len(), "Sending LLM request");
 
     let resp = client
-        .post(endpoint)
-        .header(auth_header.0, auth_header.1)
+        .post(&endpoint)
+        .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
@@ -91,20 +70,12 @@ pub async fn generate_with_llm(
     let resp_json: Value = resp.json().await
         .map_err(|e| CliError::Http { message: format!("Failed to parse LLM response: {}", e), suggestions: vec![], source: None })?;
 
-    // Extract content from response (handle both Anthropic and OpenAI formats)
+    // Extract content from OpenAI-compatible response format
     let content = if let Some(choices) = resp_json.get("choices") {
-        // OpenAI format
         choices.get(0)
             .and_then(|c| c.get("message"))
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
-            .unwrap_or("")
-            .to_string()
-    } else if let Some(content_arr) = resp_json.get("content") {
-        // Anthropic format
-        content_arr.get(0)
-            .and_then(|c| c.get("text"))
-            .and_then(|t| t.as_str())
             .unwrap_or("")
             .to_string()
     } else {
@@ -113,7 +84,6 @@ pub async fn generate_with_llm(
 
     // Clean up: remove thinking tags and markdown fencing
     let mut cleaned = content.clone();
-    // Remove <think>...</think> and <thinking>...</thinking> blocks
     while let Some(start) = cleaned.find("<think>") {
         if let Some(end) = cleaned.find("</think>") {
             cleaned = format!("{}{}", &cleaned[..start], &cleaned[end + 8..]);
@@ -130,7 +100,6 @@ pub async fn generate_with_llm(
             break;
         }
     }
-    // Remove markdown fencing if present
     let yaml = cleaned
         .trim()
         .strip_prefix("```yaml").or_else(|| cleaned.trim().strip_prefix("```"))

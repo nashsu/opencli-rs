@@ -24,5 +24,4 @@ clap = { version = "4", features = ["derive", "string"] }
 clap_complete = "4"
 colored = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-urlencoding = "2"
 inquire = "0.7"

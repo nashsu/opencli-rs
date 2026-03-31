@@ -6,9 +6,41 @@ use opencli_rs_core::{CliError, IPage};
 use serde_json::{json, Value};
 use tracing::{debug, info};
 
-use crate::config::LlmConfig;
 use crate::explore::detect_site_name;
 use crate::llm::generate_with_llm;
+
+fn is_chinese_locale() -> bool {
+    for var in &["LANG", "LC_ALL", "LANGUAGE"] {
+        if let Ok(val) = std::env::var(var) {
+            if val.to_lowercase().starts_with("zh") {
+                return true;
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("defaults")
+            .args(["read", "-g", "AppleLocale"])
+            .output()
+        {
+            if String::from_utf8_lossy(&output.stdout).to_lowercase().starts_with("zh") {
+                return true;
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(output) = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "(Get-Culture).Name"])
+            .output()
+        {
+            if String::from_utf8_lossy(&output.stdout).to_lowercase().starts_with("zh") {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// Fix evaluate block IIFE: extract JS code, fix bracket issues, ensure proper (async () => { ... })()
 fn fix_evaluate_iife(yaml: &str) -> String {
@@ -291,7 +323,7 @@ pub async fn capture_page_data(
 
         // Re-fetch each API to get response body
         const apiResponses = [];
-        for (const url of uniqueUrls.slice(0, 20)) {
+        for (const url of uniqueUrls.slice(0, 10)) {
             try {
                 const resp = await fetch(url, { credentials: 'include' });
                 if (!resp.ok) continue;
@@ -302,7 +334,7 @@ pub async fn capture_page_data(
                     url: url,
                     method: 'GET',
                     status: resp.status,
-                    body: JSON.stringify(body).slice(0, 50000),
+                    body: JSON.stringify(body).slice(0, 10000),
                 });
             } catch {}
         }
@@ -326,9 +358,9 @@ pub async fn capture_page_data(
 
         // Global state variables
         const globals = {};
-        try { if (window.__INITIAL_STATE__) globals.__INITIAL_STATE__ = JSON.stringify(window.__INITIAL_STATE__).slice(0, 30000); } catch {}
-        try { if (window.__NEXT_DATA__) globals.__NEXT_DATA__ = JSON.stringify(window.__NEXT_DATA__).slice(0, 30000); } catch {}
-        try { if (window.__NUXT__) globals.__NUXT__ = JSON.stringify(window.__NUXT__).slice(0, 30000); } catch {}
+        try { if (window.__INITIAL_STATE__) globals.__INITIAL_STATE__ = JSON.stringify(window.__INITIAL_STATE__).slice(0, 10000); } catch {}
+        try { if (window.__NEXT_DATA__) globals.__NEXT_DATA__ = JSON.stringify(window.__NEXT_DATA__).slice(0, 10000); } catch {}
+        try { if (window.__NUXT__) globals.__NUXT__ = JSON.stringify(window.__NUXT__).slice(0, 10000); } catch {}
 
         // Capture rendered HTML of main content area
         // Try common content containers, fallback to body
@@ -337,7 +369,7 @@ pub async fn capture_page_data(
         const clone = contentEl.cloneNode(true);
         clone.querySelectorAll('script, style, svg, noscript, iframe, link').forEach(el => el.remove());
         // Truncate to reasonable size for LLM context
-        const html = clone.innerHTML.slice(0, 80000);
+        const html = clone.innerHTML.slice(0, 30000);
 
         return {
             meta,
@@ -369,18 +401,18 @@ pub async fn generate_with_ai(
     page: &dyn IPage,
     url: &str,
     goal: &str,
-    llm_config: &LlmConfig,
+    token: &str,
 ) -> Result<(String, String, String), CliError> {
     // Step 1: Capture page data
-    eprintln!("📡 Capturing page data...");
+    eprintln!("{}", if is_chinese_locale() { "📡 正在采集页面数据..." } else { "📡 Capturing page data..." });
     let captured = capture_page_data(page, url).await?;
 
     // Step 2: Detect site name
     let site = detect_site_name(url);
 
-    // Step 3: Send to LLM
-    eprintln!("🤖 Sending to AI for analysis...");
-    let yaml = generate_with_llm(llm_config, &captured, goal, &site).await?;
+    // Step 3: Send to LLM via server API
+    eprintln!("{}", if is_chinese_locale() { "🤖 正在发送至 AI 分析..." } else { "🤖 Sending to AI for analysis..." });
+    let yaml = generate_with_llm(token, &captured, goal, &site).await?;
 
     // Step 4: Force site and name fields to match our detected values
     let mut fixed_yaml = yaml.clone();

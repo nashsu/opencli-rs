@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+const DEFAULT_API_BASE: &str = "https://www.autocli.ai";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
@@ -11,6 +13,24 @@ pub struct Config {
     /// AutoCLI token for authenticated API access
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "autocli-token")]
     pub autocli_token: Option<String>,
+}
+
+/// Get the AutoCLI server base URL from env var or default.
+pub fn api_base() -> String {
+    std::env::var("AUTOCLI_API_BASE")
+        .unwrap_or_else(|_| DEFAULT_API_BASE.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Get the search endpoint URL
+pub fn search_url(pattern: &str) -> String {
+    format!("{}/api/sites/cli/search?url={}", api_base(), urlencoding::encode(pattern))
+}
+
+/// Get the upload endpoint URL
+pub fn upload_url() -> String {
+    format!("{}/api/sites/upload", api_base())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
