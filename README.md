@@ -56,6 +56,13 @@ A **complete rewrite in pure Rust** based on [OpenCLI](https://github.com/jackwe
 ## Installation
 > **Just one file, download and use.** No Node.js, Python, or any runtime needed — just put it in your PATH and go.
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap nashsu/opencli-rs
+brew install opencli-rs
+```
+
 ### One-line Install Script (macOS / Linux)
 
 ```bash

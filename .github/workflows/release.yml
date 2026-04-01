@@ -140,3 +140,84 @@ jobs:
             artifacts/opencli-rs-*.zip
             artifacts/opencli-rs-chrome-extension.zip
             artifacts/SHA256SUMS.txt
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: opencli-rs-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: nashsu/homebrew-opencli-rs
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          RELEASE_URL_BASE="https://github.com/nashsu/opencli-rs/releases/download/v${VERSION}"
+          SHA_MACOS_ARM=$(sha256sum artifacts/opencli-rs-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_MACOS_INTEL=$(sha256sum artifacts/opencli-rs-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_LINUX_ARM=$(sha256sum artifacts/opencli-rs-aarch64-unknown-linux-musl.tar.gz | awk '{print $1}')
+          SHA_LINUX_INTEL=$(sha256sum artifacts/opencli-rs-x86_64-unknown-linux-musl.tar.gz | awk '{print $1}')
+
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/opencli-rs.rb <<FORMULA
+class OpencliRs < Formula
+  desc "AI-powered CLI for fetching information from any website"
+  homepage "https://github.com/nashsu/opencli-rs"
+  version "${VERSION}"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "${RELEASE_URL_BASE}/opencli-rs-aarch64-apple-darwin.tar.gz"
+      sha256 "${SHA_MACOS_ARM}"
+    end
+    on_intel do
+      url "${RELEASE_URL_BASE}/opencli-rs-x86_64-apple-darwin.tar.gz"
+      sha256 "${SHA_MACOS_INTEL}"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "${RELEASE_URL_BASE}/opencli-rs-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "${SHA_LINUX_ARM}"
+    end
+    on_intel do
+      url "${RELEASE_URL_BASE}/opencli-rs-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "${SHA_LINUX_INTEL}"
+    end
+  end
+
+  def install
+    bin.install "opencli-rs"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/opencli-rs --version")
+  end
+end
+          FORMULA
+
+          echo "Updated formula to version ${VERSION}"
+          cat homebrew-tap/Formula/opencli-rs.rb
+
+      - name: Commit and push to tap
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/opencli-rs.rb
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Update opencli-rs to ${GITHUB_REF_NAME}"
+          git push
