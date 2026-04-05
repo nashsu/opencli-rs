@@ -56,6 +56,13 @@
 ## 安装
 > **只有一个文件，下载即可使用。** 无需 Node.js、Python 或任何运行时，放到 PATH 里就能跑。
 
+### Homebrew（macOS / Linux）
+
+```bash
+brew tap nashsu/opencli-rs
+brew install opencli-rs
+```
+
 ### 一键安装脚本（macOS / Linux）
 
 ```bash

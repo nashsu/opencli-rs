@@ -56,6 +56,13 @@
 ## インストール
 > **ファイルは1つだけ、ダウンロードすればすぐ使えます。** Node.js、Python やその他のランタイムは不要、PATH に配置するだけで実行可能。
 
+### Homebrew（macOS / Linux）
+
+```bash
+brew tap nashsu/opencli-rs
+brew install opencli-rs
+```
+
 ### ワンライナーインストールスクリプト（macOS / Linux）
 
 ```bash
