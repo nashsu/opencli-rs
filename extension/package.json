@@ -1,5 +1,5 @@
 {
-  "name": "opencli-extension",
+  "name": "autocli-extension",
   "version": "1.2.6",
   "private": true,
   "type": "module",

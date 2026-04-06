@@ -1,14 +1,14 @@
 // Based on OpenCLI (https://github.com/jackwener/opencli) by jackwener
 // Licensed under Apache-2.0. Modified for AutoCLI.
 /**
- * OpenCLI — Service Worker (background script).
+ * AutoCLI — Service Worker (background script).
  *
- * Connects to the opencli daemon via WebSocket, receives commands,
+ * Connects to the AutoCLI daemon via WebSocket, receives commands,
  * dispatches them to Chrome APIs (debugger/tabs/cookies), returns results.
  */
 
 import type { Command, Result } from './protocol';
-import { DAEMON_WS_URL, WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from './protocol';
+import { DAEMON_WS_URL, DAEMON_HTTP_URL, WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from './protocol';
 import * as executor from './cdp';
 
 let ws: WebSocket | null = null;
@@ -36,8 +36,22 @@ console.error = (...args: unknown[]) => { _origError(...args); forwardLog('error
 
 // ─── WebSocket connection ────────────────────────────────────────────
 
-function connect(): void {
+/**
+ * Probe the daemon via its /ping HTTP endpoint before attempting a WebSocket
+ * connection.  fetch() failures are silently catchable; new WebSocket() is not
+ * — Chrome logs ERR_CONNECTION_REFUSED to the extension error page before any
+ * JS handler can intercept it.  By gating on the probe, we avoid noisy errors
+ * when the daemon is simply not running yet.
+ */
+async function connect(): Promise<void> {
   if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return;
+
+  try {
+    const res = await fetch(`${DAEMON_HTTP_URL}/ping`, { signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return; // unexpected response — not our daemon
+  } catch {
+    return; // daemon not running — skip WebSocket to avoid console noise
+  }
 
   try {
     ws = new WebSocket(DAEMON_WS_URL);
@@ -47,7 +61,7 @@ function connect(): void {
   }
 
   ws.onopen = () => {
-    console.log('[opencli] Connected to daemon');
+    console.log('[autocli] Connected to daemon');
     reconnectAttempts = 0; // Reset on successful connection
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -61,12 +75,12 @@ function connect(): void {
       const result = await handleCommand(command);
       ws?.send(JSON.stringify(result));
     } catch (err) {
-      console.error('[opencli] Message handling error:', err);
+      console.error('[autocli] Message handling error:', err);
     }
   };
 
   ws.onclose = () => {
-    console.log('[opencli] Disconnected from daemon');
+    console.log('[autocli] Disconnected from daemon');
     ws = null;
     scheduleReconnect();
   };
@@ -76,10 +90,17 @@ function connect(): void {
   };
 }
 
+/**
+ * After MAX_EAGER_ATTEMPTS (reaching 60s backoff), stop scheduling reconnects.
+ * The keepalive alarm (~24s) will still call connect() periodically, but at a
+ * much lower frequency — reducing console noise when the daemon is not running.
+ */
+const MAX_EAGER_ATTEMPTS = 6; // 2s, 4s, 8s, 16s, 32s, 60s — then stop
+
 function scheduleReconnect(): void {
   if (reconnectTimer) return;
   reconnectAttempts++;
-  // Exponential backoff: 2s, 4s, 8s, 16s, ..., capped at 60s
+  if (reconnectAttempts > MAX_EAGER_ATTEMPTS) return; // let keepalive alarm handle it
   const delay = Math.min(WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts - 1), WS_RECONNECT_MAX_DELAY);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -88,7 +109,7 @@ function scheduleReconnect(): void {
 }
 
 // ─── Automation window isolation ─────────────────────────────────────
-// All opencli operations happen in a dedicated Chrome window so the
+// All AutoCLI operations happen in a dedicated Chrome window so the
 // user's active browsing session is never touched.
 // The window auto-closes after 120s of idle (no commands).
 
@@ -180,7 +201,7 @@ function initialize(): void {
   chrome.alarms.create('keepalive', { periodInMinutes: 0.4 }); // ~24 seconds
   executor.registerListeners();
   connect();
-  console.log('[opencli] OpenCLI extension initialized');
+  console.log('[autocli] AutoCLI extension initialized');
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -251,10 +272,10 @@ async function resolveTabId(tabId: number | undefined, workspace: string): Promi
       const tab = await chrome.tabs.get(tabId);
       if (isDebuggableUrl(tab.url)) return tabId;
       // Tab exists but URL is not debuggable — fall through to auto-resolve
-      console.warn(`[opencli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
+      console.warn(`[autocli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
     } catch {
       // Tab was closed — fall through to auto-resolve
-      console.warn(`[opencli] Tab ${tabId} no longer exists, re-resolving`);
+      console.warn(`[autocli] Tab ${tabId} no longer exists, re-resolving`);
     }
   }
 
@@ -275,7 +296,7 @@ async function resolveTabId(tabId: number | undefined, workspace: string): Promi
     try {
       const updated = await chrome.tabs.get(reuseTab.id);
       if (isDebuggableUrl(updated.url)) return reuseTab.id;
-      console.warn(`[opencli] data: URI was intercepted (${updated.url}), creating fresh tab`);
+      console.warn(`[autocli] data: URI was intercepted (${updated.url}), creating fresh tab`);
     } catch {
       // Tab was closed during navigation
     }
@@ -370,7 +391,7 @@ async function handleNavigate(cmd: Command, workspace: string): Promise<Result> 
     setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       timedOut = true;
-      console.warn(`[opencli] Navigate to ${targetUrl} timed out after 15s`);
+      console.warn(`[autocli] Navigate to ${targetUrl} timed out after 15s`);
       resolve();
     }, 15000);
   });

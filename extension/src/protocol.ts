@@ -1,7 +1,7 @@
 // Based on OpenCLI (https://github.com/jackwener/opencli) by jackwener
 // Licensed under Apache-2.0. Modified for AutoCLI.
 /**
- * opencli browser protocol — shared types between daemon, extension, and CLI.
+ * AutoCLI browser protocol — shared types between daemon, extension, and CLI.
  *
  * 5 actions: exec, navigate, tabs, cookies, screenshot.
  * Everything else is just JS code sent via 'exec'.
