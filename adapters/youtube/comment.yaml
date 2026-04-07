@@ -1,0 +1,137 @@
+site: youtube
+name: comment
+description: Post a comment on a YouTube video
+domain: www.youtube.com
+strategy: cookie
+browser: true
+timeout_seconds: 45
+
+args:
+  video-id:
+    positional: true
+    type: string
+    required: true
+    description: "YouTube video ID (e.g. dQw4w9WgXcQ) or full URL"
+  text:
+    positional: true
+    type: string
+    required: true
+    description: Comment text
+
+columns: [status, message]
+
+pipeline:
+  - navigate: https://www.youtube.com/watch?v=${{ args['video-id'] }}
+  - wait: 3
+  - evaluate: |
+      (async () => {
+        let videoId = ${{ args['video-id'] | json }};
+        const urlMatch = videoId.match(/(?:v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+        if (urlMatch) videoId = urlMatch[1];
+
+        const text = ${{ args.text | json }};
+
+        const cfg = window.ytcfg?.data_ || {};
+        const apiKey = cfg.INNERTUBE_API_KEY;
+        const context = cfg.INNERTUBE_CONTEXT;
+        if (!apiKey || !context) return [{ status: 'failed', message: 'YouTube config not found' }];
+
+        // Build SAPISIDHASH authorization
+        const cookies = document.cookie.split(';').reduce((acc, c) => {
+          const [k, ...v] = c.trim().split('=');
+          acc[k] = v.join('=');
+          return acc;
+        }, {});
+        const sapisid = cookies['SAPISID'] || cookies['__Secure-3PAPISID'];
+        if (!sapisid) return [{ status: 'failed', message: 'Not logged in to YouTube (no SAPISID cookie)' }];
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Youtube-Client-Name': String(cfg.INNERTUBE_CONTEXT_CLIENT_NAME || '1'),
+          'X-Youtube-Client-Version': cfg.INNERTUBE_CLIENT_VERSION || context?.client?.clientVersion || '',
+          'X-Goog-Authuser': '0',
+        };
+        const ts = Math.floor(Date.now() / 1000);
+        const hash = await crypto.subtle.digest('SHA-1',
+          new TextEncoder().encode(ts + ' ' + sapisid + ' https://www.youtube.com'));
+        const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+        headers['Authorization'] = 'SAPISIDHASH ' + ts + '_' + hex;
+
+        // Step 1: Get video page data to find comment section continuation
+        const nextResp = await fetch('/youtubei/v1/next?key=' + apiKey + '&prettyPrint=false', {
+          method: 'POST', credentials: 'include', headers,
+          body: JSON.stringify({ context, videoId }),
+        });
+        if (!nextResp.ok) return [{ status: 'failed', message: 'Failed to load video data: HTTP ' + nextResp.status }];
+        const nextData = await nextResp.json();
+
+        // Find comment section continuation token
+        let contToken = null;
+        const contents = nextData.contents?.twoColumnWatchNextResults?.results?.results?.contents || [];
+        for (const item of contents) {
+          if (item.itemSectionRenderer?.sectionIdentifier === 'comment-item-section') {
+            contToken = item.itemSectionRenderer?.contents?.[0]?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+            break;
+          }
+        }
+        if (!contToken) return [{ status: 'failed', message: 'Comment section not found - comments may be disabled' }];
+
+        // Step 2: Load comment section to extract createCommentParams
+        const contResp = await fetch('/youtubei/v1/next?key=' + apiKey + '&prettyPrint=false', {
+          method: 'POST', credentials: 'include', headers,
+          body: JSON.stringify({ context, continuation: contToken }),
+        });
+        if (!contResp.ok) return [{ status: 'failed', message: 'Failed to load comments: HTTP ' + contResp.status }];
+        const contData = await contResp.json();
+
+        // Extract createCommentParams from loaded comment section
+        let createParams = null;
+        const findParams = (obj, depth) => {
+          if (!obj || depth > 15 || createParams) return;
+          if (typeof obj !== 'object') return;
+          if (typeof obj.createCommentParams === 'string') { createParams = obj.createCommentParams; return; }
+          if (Array.isArray(obj)) {
+            for (const item of obj) findParams(item, depth + 1);
+          } else {
+            for (const key of Object.keys(obj)) findParams(obj[key], depth + 1);
+          }
+        };
+        findParams(contData, 0);
+
+        if (!createParams) return [{ status: 'failed', message: 'Could not extract comment params - may need to re-login to YouTube' }];
+
+        // Step 3: Post the comment
+        const resp = await fetch('/youtubei/v1/comment/create_comment?key=' + apiKey + '&prettyPrint=false', {
+          method: 'POST',
+          credentials: 'include',
+          headers,
+          body: JSON.stringify({
+            context,
+            commentText: text,
+            createCommentParams: createParams,
+          }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          return [{ status: 'failed', message: 'HTTP ' + resp.status + ' ' + errText.substring(0, 300) }];
+        }
+
+        const data = await resp.json();
+        if (data.error) {
+          return [{ status: 'failed', message: data.error.message || JSON.stringify(data.error).substring(0, 200) }];
+        }
+
+        const hasActions = data.actions?.length > 0;
+        const hasResult = data.actionResult;
+        const hasComment = JSON.stringify(data).includes('commentRenderer');
+
+        if (hasActions || hasResult || hasComment) {
+          return [{ status: 'success', message: 'Comment posted on ' + videoId }];
+        }
+
+        return [{ status: 'unknown', message: 'Response: ' + JSON.stringify(data).substring(0, 400) }];
+      })()
+  - map:
+      status: ${{ item.status }}
+      message: ${{ item.message }}
