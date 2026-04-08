@@ -1,0 +1,126 @@
+site: youtube
+name: comments
+description: Read comments on a YouTube video
+domain: www.youtube.com
+strategy: cookie
+browser: true
+timeout_seconds: 45
+
+args:
+  video-id:
+    positional: true
+    type: string
+    required: true
+    description: "YouTube video ID (e.g. dQw4w9WgXcQ) or full URL"
+  limit:
+    type: int
+    default: 20
+    description: "Max comments to return (max 100)"
+
+columns: [rank, author, time, likes, text]
+
+pipeline:
+  - navigate: https://www.youtube.com/watch?v=${{ args['video-id'] }}
+  - wait: 3
+  - evaluate: |
+      (async () => {
+        let videoId = ${{ args['video-id'] | json }};
+        const urlMatch = videoId.match(/(?:v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+        if (urlMatch) videoId = urlMatch[1];
+
+        const limit = Math.min(${{ args.limit }}, 100);
+
+        const cfg = window.ytcfg?.data_ || {};
+        const apiKey = cfg.INNERTUBE_API_KEY;
+        const context = cfg.INNERTUBE_CONTEXT;
+        if (!apiKey || !context) return [{ rank: 0, author: 'ERROR', time: '', likes: '', text: 'YouTube config not found' }];
+
+        const cookies = document.cookie.split(';').reduce((acc, c) => {
+          const [k, ...v] = c.trim().split('=');
+          acc[k] = v.join('=');
+          return acc;
+        }, {});
+        const sapisid = cookies['SAPISID'] || cookies['__Secure-3PAPISID'];
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Youtube-Client-Name': String(cfg.INNERTUBE_CONTEXT_CLIENT_NAME || '1'),
+          'X-Youtube-Client-Version': cfg.INNERTUBE_CLIENT_VERSION || context?.client?.clientVersion || '',
+          'X-Goog-Authuser': '0',
+        };
+        if (sapisid) {
+          const ts = Math.floor(Date.now() / 1000);
+          const hash = await crypto.subtle.digest('SHA-1',
+            new TextEncoder().encode(ts + ' ' + sapisid + ' https://www.youtube.com'));
+          const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+          headers['Authorization'] = 'SAPISIDHASH ' + ts + '_' + hex;
+        }
+
+        // Step 1: Get video page data
+        const nextResp = await fetch('/youtubei/v1/next?key=' + apiKey + '&prettyPrint=false', {
+          method: 'POST', credentials: 'include', headers,
+          body: JSON.stringify({ context, videoId }),
+        });
+        if (!nextResp.ok) return [{ rank: 0, author: 'ERROR', time: '', likes: '', text: 'HTTP ' + nextResp.status }];
+        const nextData = await nextResp.json();
+
+        // Step 2: Find comment section continuation
+        let contToken = null;
+        const contents = nextData.contents?.twoColumnWatchNextResults?.results?.results?.contents || [];
+        for (const item of contents) {
+          if (item.itemSectionRenderer?.sectionIdentifier === 'comment-item-section') {
+            contToken = item.itemSectionRenderer?.contents?.[0]?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+            break;
+          }
+        }
+        if (!contToken) return [{ rank: 0, author: 'ERROR', time: '', likes: '', text: 'Comments disabled or not found' }];
+
+        // Step 3: Load comments
+        const contResp = await fetch('/youtubei/v1/next?key=' + apiKey + '&prettyPrint=false', {
+          method: 'POST', credentials: 'include', headers,
+          body: JSON.stringify({ context, continuation: contToken }),
+        });
+        if (!contResp.ok) return [{ rank: 0, author: 'ERROR', time: '', likes: '', text: 'HTTP ' + contResp.status }];
+        const contData = await contResp.json();
+
+        // Step 4: Extract comments from frameworkUpdates.entityBatchUpdate.mutations
+        const mutations = contData.frameworkUpdates?.entityBatchUpdate?.mutations || [];
+        const comments = [];
+
+        for (const m of mutations) {
+          const cep = m.payload?.commentEntityPayload;
+          if (!cep) continue;
+
+          const props = cep.properties || {};
+          const author = cep.author || {};
+          const toolbar = cep.toolbar || {};
+
+          const text = props.content?.content || '';
+          const authorName = author.displayName || '';
+          const time = props.publishedTime || '';
+          const likes = toolbar.likeCountNotliked || toolbar.likeCountLiked || '0';
+
+          if (text) {
+            comments.push({
+              rank: comments.length + 1,
+              author: authorName,
+              time: time,
+              likes: likes,
+              text: text.substring(0, 250),
+            });
+          }
+
+          if (comments.length >= limit) break;
+        }
+
+        if (comments.length === 0) {
+          return [{ rank: 0, author: 'INFO', time: '', likes: '', text: 'No comments parsed' }];
+        }
+
+        return comments;
+      })()
+  - map:
+      rank: ${{ item.rank }}
+      author: ${{ item.author }}
+      time: ${{ item.time }}
+      likes: ${{ item.likes }}
+      text: ${{ item.text }}
