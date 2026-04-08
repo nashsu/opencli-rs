@@ -4,7 +4,7 @@ site: twitter
 name: search
 description: Search Twitter/X for tweets
 domain: x.com
-strategy: intercept
+strategy: cookie
 browser: true
 
 args:
@@ -16,63 +16,96 @@ args:
     type: int
     default: 15
 
-columns: [id, author, text, likes, views, url]
+columns: [id, author, text, likes, retweets, replies, views, url]
 
 pipeline:
   - navigate:
-      url: https://x.com/explore
-      settleMs: 3000
-
-  - intercept:
-      pattern: SearchTimeline
-      collect: false
-
-  - evaluate: |
-      (() => {
-        const searchUrl = '/search?q=' + encodeURIComponent(${{ args.query | json }}) + '&f=top';
-        window.history.pushState({}, '', searchUrl);
-        window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-      })()
-
-  - wait: 5
+      url: https://x.com/search?q=${{ args.query }}&src=typed_query&f=top
+      settleMs: 5000
 
   - scroll:
       times: 3
-      delayMs: 2000
+      delayMs: 1500
 
-  - collect:
-      parse: |
-        (requests) => {
-          let results = [];
-          const seen = new Set();
-          for (const req of requests) {
-            try {
-              const insts = req?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions || [];
-              const addEntries = insts.find(i => i.type === 'TimelineAddEntries')
-                || insts.find(i => i.entries && Array.isArray(i.entries));
-              if (!addEntries?.entries) continue;
-              for (const entry of addEntries.entries) {
-                if (!entry.entryId.startsWith('tweet-')) continue;
-                let tweet = entry.content?.itemContent?.tweet_results?.result;
-                if (!tweet) continue;
-                if (tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
-                  tweet = tweet.tweet;
-                }
-                if (!tweet.rest_id || seen.has(tweet.rest_id)) continue;
-                seen.add(tweet.rest_id);
-                const tweetUser = tweet.core?.user_results?.result;
-                results.push({
-                  id: tweet.rest_id,
-                  author: tweetUser?.core?.screen_name || tweetUser?.legacy?.screen_name || 'unknown',
-                  text: tweet.note_tweet?.note_tweet_results?.result?.text || tweet.legacy?.full_text || '',
-                  likes: tweet.legacy?.favorite_count || 0,
-                  views: tweet.views?.count || '0',
-                  url: 'https://x.com/i/status/' + tweet.rest_id,
-                });
+  - evaluate: |
+      (() => {
+        const limit = ${{ args.limit }};
+        const articles = document.querySelectorAll('article[data-testid="tweet"]');
+        const results = [];
+
+        for (const article of articles) {
+          if (results.length >= limit) break;
+          try {
+            // Author from user name link
+            const userLinks = article.querySelectorAll('a[role="link"]');
+            let screenName = 'unknown';
+            for (const link of userLinks) {
+              const href = link.getAttribute('href') || '';
+              if (href.match(/^\/[A-Za-z0-9_]+$/) && !href.startsWith('/search') && !href.startsWith('/i/')) {
+                screenName = href.replace('/', '');
+                break;
               }
-            } catch (e) {}
-          }
-          return results;
+            }
+
+            // Tweet text
+            const textEl = article.querySelector('div[data-testid="tweetText"]');
+            const text = textEl ? textEl.textContent.trim() : '';
+
+            // Tweet ID from status link
+            let id = '';
+            let statusHref = '';
+            const allLinks = article.querySelectorAll('a[href*="/status/"]');
+            for (const link of allLinks) {
+              const href = link.getAttribute('href') || '';
+              const m = href.match(/\/status\/(\d+)/);
+              if (m) {
+                id = m[1];
+                statusHref = href;
+                break;
+              }
+            }
+
+            if (!id) continue;
+
+            // Engagement metrics
+            const getMetric = (testId) => {
+              const btn = article.querySelector('button[data-testid="' + testId + '"]');
+              if (!btn) return 0;
+              const span = btn.querySelector('span[data-testid="app-text-transition-container"]');
+              if (!span) return 0;
+              const val = span.textContent.trim();
+              if (!val) return 0;
+              if (val.includes('K')) return Math.round(parseFloat(val) * 1000);
+              if (val.includes('M')) return Math.round(parseFloat(val) * 1000000);
+              return parseInt(val, 10) || 0;
+            };
+
+            // Views from analytics link
+            const analyticsLink = article.querySelector('a[href*="/analytics"]');
+            let views = 0;
+            if (analyticsLink) {
+              const viewsText = analyticsLink.textContent.trim();
+              if (viewsText.includes('K')) views = Math.round(parseFloat(viewsText) * 1000);
+              else if (viewsText.includes('M')) views = Math.round(parseFloat(viewsText) * 1000000);
+              else views = parseInt(viewsText, 10) || 0;
+            }
+
+            results.push({
+              id,
+              author: screenName,
+              text: text.slice(0, 280),
+              likes: getMetric('like') || getMetric('unlike'),
+              retweets: getMetric('retweet') || getMetric('unretweet'),
+              replies: getMetric('reply'),
+              views,
+              url: 'https://x.com' + statusHref,
+            });
+          } catch {}
         }
 
-  - limit: ${{ args.limit }}
+        if (results.length === 0) {
+          throw new Error('No tweets found. X may require login or changed their DOM structure.');
+        }
+
+        return results;
+      })()
