@@ -33,13 +33,13 @@ impl BrowserBridge {
     pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
         let client = Arc::new(DaemonClient::new(self.port));
 
-        // Step 1: Check Chrome is running
-        if !is_chrome_running() {
+        // Step 1: Check a supported Chromium-family browser is running
+        if !is_chromium_browser_running() {
             return Err(CliError::BrowserConnect {
-                message: "Chrome is not running".into(),
+                message: "Chrome/Chromium browser is not running".into(),
                 suggestions: vec![
-                    "Please open Google Chrome with the OpenCLI extension installed".into(),
-                    "The extension connects to the daemon automatically when Chrome is open".into(),
+                    "Please open a supported Chromium browser (Chrome, Brave, Edge, Chromium) with the AutoCLI extension installed".into(),
+                    "The extension connects to the daemon automatically when the browser is open".into(),
                 ],
                 source: None,
             });
@@ -55,28 +55,35 @@ impl BrowserBridge {
         }
 
         // Step 3: Wait up to 5s for extension to connect
-        if self.poll_extension(&client, EXTENSION_INITIAL_WAIT, false).await {
+        if self
+            .poll_extension(&client, EXTENSION_INITIAL_WAIT, false)
+            .await
+        {
             let page = DaemonPage::new(client, "default");
             return Ok(Arc::new(page));
         }
 
         // Step 4: Extension not connected — try to wake up Chrome
-        info!("Extension not connected after 5s, attempting to wake up Chrome");
-        eprintln!("Waking up Chrome extension...");
-        wake_chrome();
+        info!("Extension not connected after 5s, attempting to wake up browser");
+        eprintln!("Waking up browser extension...");
+        wake_browser();
 
         // Step 5: Wait remaining 25s with progress
-        if self.poll_extension(&client, EXTENSION_REMAINING_WAIT, true).await {
+        if self
+            .poll_extension(&client, EXTENSION_REMAINING_WAIT, true)
+            .await
+        {
             let page = DaemonPage::new(client, "default");
             return Ok(Arc::new(page));
         }
 
-        warn!("Chrome extension is not connected to the daemon");
+        warn!("Browser extension is not connected to the daemon");
         Err(CliError::BrowserConnect {
-            message: "Chrome extension not connected".into(),
+            message: "Browser extension not connected".into(),
             suggestions: vec![
-                "Make sure the OpenCLI Chrome extension is installed and enabled".into(),
-                "Try opening a new Chrome window manually".into(),
+                "Make sure the AutoCLI extension is installed and enabled in your Chromium browser"
+                    .into(),
+                "Try opening a new Chrome/Brave/Edge/Chromium window manually".into(),
                 format!("The daemon is listening on port {}", self.port),
             ],
             source: None,
@@ -121,7 +128,7 @@ impl BrowserBridge {
                 if printed {
                     eprintln!();
                 }
-                info!("Chrome extension connected");
+                info!("Browser extension connected");
                 return true;
             }
 
@@ -163,54 +170,121 @@ impl BrowserBridge {
     }
 }
 
-/// Check if Chrome/Chromium is running as a process.
-fn is_chrome_running() -> bool {
+/// Check if a supported Chromium-family browser is running as a process.
+fn is_chromium_browser_running() -> bool {
     if cfg!(target_os = "macos") {
-        // macOS: check for "Google Chrome" process
-        std::process::Command::new("pgrep")
-            .args(["-x", "Google Chrome"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+        [
+            "Google Chrome",
+            "Brave Browser",
+            "Microsoft Edge",
+            "Chromium",
+        ]
+        .iter()
+        .any(|name| {
+            std::process::Command::new("pgrep")
+                .args(["-x", name])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
     } else if cfg!(target_os = "windows") {
-        // Windows: check for chrome.exe
         std::process::Command::new("tasklist")
-            .args(["/FI", "IMAGENAME eq chrome.exe", "/NH"])
+            .args(["/NH"])
             .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("chrome.exe"))
+            .map(|o| {
+                let stdout = String::from_utf8_lossy(&o.stdout).to_lowercase();
+                ["chrome.exe", "brave.exe", "msedge.exe", "chromium.exe"]
+                    .iter()
+                    .any(|name| stdout.contains(name))
+            })
             .unwrap_or(false)
     } else {
-        // Linux: check for chrome or chromium
-        std::process::Command::new("pgrep")
-            .args(["-x", "chrome|chromium"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+        [
+            "google-chrome",
+            "google-chrome-stable",
+            "chrome",
+            "chromium",
+            "chromium-browser",
+            "brave",
+            "brave-browser",
+            "microsoft-edge",
+            "microsoft-edge-stable",
+        ]
+        .iter()
+        .any(|name| {
+            std::process::Command::new("pgrep")
+                .args(["-x", name])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
     }
 }
 
-/// Try to wake up Chrome by opening a window.
-/// When Chrome is running but has no windows, the extension Service Worker is suspended.
+/// Try to wake up a Chromium-family browser by opening a blank window.
+/// When the browser is running but has no windows, the extension Service Worker may be suspended.
 /// Opening a window activates the Service Worker, which then reconnects to the daemon.
-fn wake_chrome() {
+fn wake_browser() {
     let result = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .args(["-a", "Google Chrome", "about:blank"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
+        let apps = [
+            "Google Chrome",
+            "Brave Browser",
+            "Microsoft Edge",
+            "Chromium",
+        ];
+        let mut launched = None;
+        for app in apps {
+            match std::process::Command::new("open")
+                .args(["-a", app, "about:blank"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    launched = Some(Ok(child));
+                    break;
+                }
+                Err(e) => {
+                    launched = Some(Err(e));
+                }
+            }
+        }
+        launched.unwrap_or_else(|| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No supported Chromium browser launcher found",
+            ))
+        })
     } else if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "chrome", "about:blank"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
+        let commands = ["chrome", "brave", "msedge", "chromium"];
+        let mut launched = None;
+        for browser in commands {
+            match std::process::Command::new("cmd")
+                .args(["/C", "start", "", browser, "about:blank"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    launched = Some(Ok(child));
+                    break;
+                }
+                Err(e) => {
+                    launched = Some(Err(e));
+                }
+            }
+        }
+        launched.unwrap_or_else(|| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No supported Chromium browser launcher found",
+            ))
+        })
     } else {
-        // Linux: try common Chrome executables
         std::process::Command::new("xdg-open")
             .arg("about:blank")
             .stdout(std::process::Stdio::null())
@@ -219,8 +293,8 @@ fn wake_chrome() {
     };
 
     match result {
-        Ok(_) => debug!("Opened Chrome window to wake extension"),
-        Err(e) => debug!("Failed to open Chrome window: {e}"),
+        Ok(_) => debug!("Opened browser window to wake extension"),
+        Err(e) => debug!("Failed to open browser window: {e}"),
     }
 }
 
