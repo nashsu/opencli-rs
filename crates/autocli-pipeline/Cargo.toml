@@ -17,3 +17,4 @@ pest_derive = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 futures = "0.3"
 base64 = "0.22"
+urlencoding = "2"

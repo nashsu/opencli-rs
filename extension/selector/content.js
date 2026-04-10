@@ -64,9 +64,12 @@
     get matched() { return lang==='zh' ? '匹配' : 'matched'; },
     get columns() { return lang==='zh' ? '数据列' : 'Columns'; },
     get usage() { return lang==='zh' ? '使用方式' : 'Usage'; },
+    get parameters() { return lang==='zh' ? '参数说明' : 'Parameters'; },
+    get privateLabel() { return lang==='zh' ? '仅保存到本地，不同步至 AutoCLI.ai' : 'Save locally only, do not sync to AutoCLI.ai'; },
     get copy() { return lang==='zh' ? '复制' : 'copy'; },
     get viewOn() { return lang==='zh' ? '在 autocli.ai 查看 →' : 'View on autocli.ai →'; },
     get synced() { return lang==='zh' ? '配置已同步保存到本地和云端，可直接使用' : 'Saved locally & synced to cloud. Ready to use.'; },
+    get savedLocal() { return lang==='zh' ? '配置已保存到本地，可直接使用' : 'Saved locally. Ready to use.'; },
     get emptyResponse() { return lang==='zh' ? 'AI 返回了空内容' : i.emptyResponse; },
     get limitReached() { return lang==='zh' ? '已达到使用限制' : 'Limit Reached'; },
     get learnMore() { return lang==='zh' ? '前往 autocli.ai 了解更多 →' : 'Learn more at autocli.ai →'; },
@@ -275,6 +278,15 @@
         0% { background-position:200% 0; }
         100% { background-position:-200% 0; }
       }
+      .private-opt {
+        display:flex; align-items:center; gap:6px; margin-bottom:8px;
+        font-size:10px; color:#5d5f5f; font-family:'JetBrains Mono',monospace;
+        cursor:pointer; user-select:none;
+      }
+      .private-opt input {
+        width:12px; height:12px; margin:0; cursor:pointer;
+        accent-color:#ff571a;
+      }
       .btn-generate {
         width:100%; padding:8px;
         background:#ff571a; color:#fff; border:1px solid #ff571a;
@@ -346,6 +358,21 @@
         font-family:'JetBrains Mono',monospace;
       }
       .sum-cmd-copy:hover { color:#fff; border-color:#5d5f5f; }
+      .sum-params { margin-top:4px; }
+      .sum-param {
+        display:flex; align-items:baseline; gap:6px; padding:4px 0;
+        font-size:11px; border-bottom:1px solid #f2f2f2;
+      }
+      .sum-param:last-child { border-bottom:none; }
+      .sum-param-name {
+        font-family:'JetBrains Mono',monospace; font-weight:600; color:#0f1112;
+        min-width:60px; flex-shrink:0;
+      }
+      .sum-param-meta {
+        font-family:'JetBrains Mono',monospace; font-size:10px; color:#aaabab;
+        flex-shrink:0;
+      }
+      .sum-param-desc { color:#5d5f5f; flex:1; }
       .sum-link {
         display:block; text-align:center; margin-top:8px;
         font-size:10px; color:#aaabab; text-decoration:none;
@@ -435,6 +462,7 @@
         <div class="gen-notice" id="s-update-notice" style="display:none;"></div>
         <div class="generate-error" id="s-gen-error" style="display:none;"></div>
         <div class="gen-ratelimit" id="s-gen-rl" style="display:none;"></div>
+        <label class="private-opt"><input type="checkbox" id="s-private"> <span id="s-private-label">Private — save locally only</span></label>
         <button class="btn-generate" id="s-generate" disabled>Generate Adapter with AI</button>
       </div>
       <div class="toast" id="s-toast">copied</div>
@@ -475,6 +503,8 @@
   const exportSection = q('s-sec-export');
   const genSection = q('s-sec-generate');
   const genBtn = q('s-generate');
+  const privateCheckbox = q('s-private');
+  const privateLabel = q('s-private-label');
   const genStream = q('s-gen-stream');
   const genSummary = q('s-gen-summary');
   const genError = q('s-gen-error');
@@ -523,6 +553,7 @@
     emptyEl.innerHTML = `<b>${i.noEntries}</b>`;
     if (helpEl) helpEl.innerHTML = `<b>ESC</b> ${lang==='zh' ? '停止选取 · 点击选择器复制' : 'stop picking · click selector to copy'}`;
     if (mode === 'idle' && !generatedDone) setStatus(i.statusInit, '');
+    privateLabel.textContent = i.privateLabel;
     updateGenButton();
     render();
   }
@@ -905,7 +936,7 @@
         const port = chrome.runtime.connect({ name: 'daemon-stream' });
         let sseBuffer = '';
 
-        port.postMessage({ path: '/ai-generate', body: { captured_data: capturedData, stream: true } });
+        port.postMessage({ path: '/ai-generate', body: { captured_data: capturedData, stream: true, private: privateCheckbox.checked } });
 
         port.onMessage.addListener((msg) => {
           if (msg.type === 'chunk') {
@@ -995,11 +1026,25 @@
       const tagMatch = yaml.match(/^tags:\s*\[([^\]]+)\]/m);
       const tags = tagMatch ? tagMatch[1].trim() : '';
 
+      // Parse args with full details
       const argNames = [];
+      const argDetails = [];
       const argSection = yaml.match(/^args:\n((?:  .+\n)*)/m);
       if (argSection) {
-        const argMatches = argSection[1].matchAll(/^  (\w+):/gm);
-        for (const m of argMatches) argNames.push(m[1]);
+        const argBlocks = argSection[1].split(/^  (?=\w)/gm).filter(Boolean);
+        for (const block of argBlocks) {
+          const nameMatch = block.match(/^(\w[\w-]*):/);
+          if (!nameMatch) continue;
+          const name = nameMatch[1];
+          argNames.push(name);
+          const type = (block.match(/type:\s*(\w+)/) || [])[1] || 'str';
+          const required = /required:\s*true/.test(block);
+          const defMatch = block.match(/default:\s*(.+)/);
+          const def = defMatch ? defMatch[1].trim() : '';
+          const descMatch = block.match(/description:\s*["']?(.+?)["']?\s*$/m);
+          const desc = descMatch ? descMatch[1] : '';
+          argDetails.push({ name, type, required, def, desc });
+        }
       }
 
       const argHints = argNames.filter(a => a !== 'limit').map(a => `<${a}>`).join(' ');
@@ -1027,8 +1072,18 @@
           <span class="sum-cmd-text">${cmdHtml}</span>
           <span class="sum-cmd-copy">${i.copy}</span>
         </div>
+        ${argDetails.length ? `
+          <div class="sum-section-title">${i.parameters}</div>
+          <div class="sum-params">
+            ${argDetails.map(a => `<div class="sum-param">
+              <span class="sum-param-name">${esc(a.name)}</span>
+              <span class="sum-param-meta">${esc(a.type)}${a.required ? ', required' : ''}${a.def ? ', default: ' + esc(a.def) : ''}</span>
+              ${a.desc ? `<span class="sum-param-desc">${esc(a.desc)}</span>` : ''}
+            </div>`).join('')}
+          </div>
+        ` : ''}
         <a class="sum-link" href="https://www.autocli.ai" target="_blank">${i.viewOn}</a>
-        <div class="sum-synced"><span class="check">✓</span> ${i.synced}</div>
+        <div class="sum-synced"><span class="check">✓</span> ${privateCheckbox.checked ? i.savedLocal : i.synced}</div>
       `;
 
       genSummary.querySelector('.sum-cmd')?.addEventListener('click', () => copyText(cmd));

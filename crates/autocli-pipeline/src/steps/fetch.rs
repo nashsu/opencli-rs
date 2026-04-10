@@ -18,6 +18,41 @@ fn http_error(msg: impl Into<String>) -> CliError {
     }
 }
 
+/// Render query params from a template object and append them to the URL.
+fn append_query_params(
+    url: &str,
+    query_params: &Value,
+    ctx: &TemplateContext,
+) -> Result<String, CliError> {
+    let obj = match query_params.as_object() {
+        Some(o) => o,
+        None => return Ok(url.to_string()),
+    };
+    if obj.is_empty() {
+        return Ok(url.to_string());
+    }
+
+    let mut pairs = Vec::new();
+    for (key, val_template) in obj {
+        let rendered = render_template(val_template, ctx)?;
+        let val_str = match &rendered {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => continue,
+            other => other.to_string(),
+        };
+        pairs.push(format!(
+            "{}={}",
+            urlencoding::encode(key),
+            urlencoding::encode(&val_str)
+        ));
+    }
+
+    let separator = if url.contains('?') { "&" } else { "?" };
+    Ok(format!("{url}{separator}{}", pairs.join("&")))
+}
+
 /// Check if a URL template references `item` (indicating per-item mode).
 fn is_per_item_url(url: &str) -> bool {
     // Look for ${{ ... item ... }} patterns
@@ -161,9 +196,9 @@ impl StepHandler for FetchStep {
         args: &HashMap<String, Value>,
     ) -> Result<Value, CliError> {
         // Extract URL, method, headers, body from params
-        let (url_template, method, headers_template, body_template) = match params {
+        let (url_template, method, headers_template, body_template, query_params_template) = match params {
             // Mode 1: simple URL string
-            Value::String(url) => (url.clone(), "GET".to_string(), None, None),
+            Value::String(url) => (url.clone(), "GET".to_string(), None, None, None),
             // Mode 2/3: object params
             Value::Object(obj) => {
                 let url = obj
@@ -178,7 +213,8 @@ impl StepHandler for FetchStep {
                     .to_string();
                 let headers = obj.get("headers").cloned();
                 let body = obj.get("body").cloned();
-                (url, method, headers, body)
+                let query_params = obj.get("params").cloned();
+                (url, method, headers, body, query_params)
             }
             _ => return Err(CliError::pipeline("fetch: params must be a string URL or an object")),
         };
@@ -197,6 +233,7 @@ impl StepHandler for FetchStep {
                     let method = method.clone();
                     let headers_tmpl = headers_template.clone();
                     let body_tmpl = body_template.clone();
+                    let qp_tmpl = query_params_template.clone();
                     let args = args.clone();
                     let data = data.clone();
                     let client = client.clone();
@@ -208,10 +245,15 @@ impl StepHandler for FetchStep {
                             index,
                         };
                         let rendered_url = render_template_str(&url_tmpl, &ctx)?;
-                        let url_str = rendered_url
+                        let mut url_str = rendered_url
                             .as_str()
                             .ok_or_else(|| CliError::pipeline("fetch: rendered URL is not a string"))?
                             .to_string();
+
+                        // Append query params if present
+                        if let Some(qp) = &qp_tmpl {
+                            url_str = append_query_params(&url_str, qp, &ctx)?;
+                        }
 
                         // Render headers if present
                         let rendered_headers = match &headers_tmpl {
@@ -255,10 +297,15 @@ impl StepHandler for FetchStep {
             };
 
             let rendered_url = render_template_str(&url_template, &ctx)?;
-            let url_str = rendered_url
+            let mut url_str = rendered_url
                 .as_str()
                 .ok_or_else(|| CliError::pipeline("fetch: rendered URL is not a string"))?
                 .to_string();
+
+            // Append query params if present
+            if let Some(qp) = &query_params_template {
+                url_str = append_query_params(&url_str, qp, &ctx)?;
+            }
 
             // Render headers if present
             let rendered_headers = match &headers_template {
