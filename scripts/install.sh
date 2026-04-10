@@ -106,6 +106,16 @@ if command -v "opencli-rs" >/dev/null 2>&1; then
     rm -f "$OLD_BIN" 2>/dev/null || sudo rm -f "$OLD_BIN" 2>/dev/null || true
 fi
 
+# Kill old daemon and start new one
+DAEMON_PORT=19925
+if lsof -ti tcp:${DAEMON_PORT} >/dev/null 2>&1; then
+    info "Stopping old daemon on port ${DAEMON_PORT}..."
+    lsof -ti tcp:${DAEMON_PORT} | xargs kill -9 2>/dev/null || true
+    sleep 1
+fi
+info "Starting new daemon..."
+"${INSTALL_DIR}/${BINARY_NAME}" --version >/dev/null 2>&1 || true
+
 # Verify
 if command -v "$BINARY_NAME" >/dev/null 2>&1; then
     INSTALLED_VERSION=$("$BINARY_NAME" --version 2>/dev/null || echo "unknown")

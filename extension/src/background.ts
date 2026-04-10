@@ -820,8 +820,14 @@ chrome.runtime.onConnect.addListener((port) => {
   const streamId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   aiStreamPorts.set(streamId, port);
 
-  port.onMessage.addListener((msg) => {
-    // Send AI generate request through existing daemon WebSocket
+  port.onMessage.addListener(async (msg) => {
+    // If WS not connected, try reconnecting once before giving up
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      await connect();
+      // Wait briefly for connection to establish
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'ai-generate',
@@ -829,7 +835,7 @@ chrome.runtime.onConnect.addListener((port) => {
         ...msg,
       }));
     } else {
-      port.postMessage({ type: 'error', status: 0, body: 'Daemon not connected' });
+      port.postMessage({ type: 'error', status: 0, body: 'Daemon not connected. Run: autocli' });
       try { port.disconnect(); } catch {}
       aiStreamPorts.delete(streamId);
     }

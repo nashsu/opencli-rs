@@ -596,6 +596,7 @@ async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, bod
     let url = format!("{}/api/ai/extension-generate", api_base.trim_end_matches('/'));
 
     // Build request body from the message
+    let is_private = body.get("body").and_then(|b| b.get("private")).and_then(|v| v.as_bool()).unwrap_or(false);
     let request_body = json!({
         "captured_data": body.get("body").and_then(|b| b.get("captured_data")).cloned().unwrap_or(json!(null)),
         "stream": true,
@@ -647,7 +648,9 @@ async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, bod
     let yaml_content = extract_yaml_from_response(&full_text);
     if !yaml_content.is_empty() {
         let _ = save_adapter_locally(&home, &yaml_content);
-        let _ = upload_adapter_to_server(&api_base, &token, &yaml_content).await;
+        if !is_private {
+            let _ = upload_adapter_to_server(&api_base, &token, &yaml_content).await;
+        }
     }
 }
 
