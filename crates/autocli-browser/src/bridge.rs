@@ -33,13 +33,13 @@ impl BrowserBridge {
     pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
         let client = Arc::new(DaemonClient::new(self.port));
 
-        // Step 1: Check Chrome is running
+        // Step 1: Check Chrome/Helium is running
         if !is_chrome_running() {
             return Err(CliError::BrowserConnect {
-                message: "Chrome is not running".into(),
+                message: "Browser is not running".into(),
                 suggestions: vec![
-                    "Please open Google Chrome with the OpenCLI extension installed".into(),
-                    "The extension connects to the daemon automatically when Chrome is open".into(),
+                    "Please open Google Chrome or Helium with the OpenCLI extension installed".into(),
+                    "The extension connects to the daemon automatically when the browser is open".into(),
                 ],
                 source: None,
             });
@@ -60,9 +60,9 @@ impl BrowserBridge {
             return Ok(Arc::new(page));
         }
 
-        // Step 4: Extension not connected — try to wake up Chrome
-        info!("Extension not connected after 5s, attempting to wake up Chrome");
-        eprintln!("Waking up Chrome extension...");
+        // Step 4: Extension not connected — try to wake up browser
+        info!("Extension not connected after 5s, attempting to wake up browser");
+        eprintln!("Waking up browser extension...");
         wake_chrome();
 
         // Step 5: Wait remaining 25s with progress
@@ -71,12 +71,12 @@ impl BrowserBridge {
             return Ok(Arc::new(page));
         }
 
-        warn!("Chrome extension is not connected to the daemon");
+        warn!("Browser extension is not connected to the daemon");
         Err(CliError::BrowserConnect {
-            message: "Chrome extension not connected".into(),
+            message: "Browser extension not connected".into(),
             suggestions: vec![
-                "Make sure the OpenCLI Chrome extension is installed and enabled".into(),
-                "Try opening a new Chrome window manually".into(),
+                "Make sure the OpenCLI Chrome extension is installed and enabled in Chrome or Helium".into(),
+                "Try opening a new browser window manually".into(),
                 format!("The daemon is listening on port {}", self.port),
             ],
             source: None,
@@ -163,17 +163,27 @@ impl BrowserBridge {
     }
 }
 
-/// Check if Chrome/Chromium is running as a process.
+/// Check if Chrome/Chromium or compatible browser (Helium on macOS) is running as a process.
 fn is_chrome_running() -> bool {
     if cfg!(target_os = "macos") {
-        // macOS: check for "Google Chrome" process
-        std::process::Command::new("pgrep")
+        // macOS: check for "Google Chrome" or "Helium" process
+        let chrome = std::process::Command::new("pgrep")
             .args(["-x", "Google Chrome"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        let helium = std::process::Command::new("pgrep")
+            .args(["-x", "Helium"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        chrome || helium
     } else if cfg!(target_os = "windows") {
         // Windows: check for chrome.exe
         std::process::Command::new("tasklist")
@@ -193,16 +203,27 @@ fn is_chrome_running() -> bool {
     }
 }
 
-/// Try to wake up Chrome by opening a window.
-/// When Chrome is running but has no windows, the extension Service Worker is suspended.
+/// Try to wake up Chrome or Helium by opening a window.
+/// When the browser is running but has no windows, the extension Service Worker is suspended.
 /// Opening a window activates the Service Worker, which then reconnects to the daemon.
 fn wake_chrome() {
     let result = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .args(["-a", "Google Chrome", "about:blank"])
+        // Try Helium first (lighter weight), fall back to Chrome
+        let helium = std::process::Command::new("open")
+            .args(["-a", "Helium", "about:blank"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .spawn()
+            .spawn();
+
+        if helium.is_ok() {
+            helium
+        } else {
+            std::process::Command::new("open")
+                .args(["-a", "Google Chrome", "about:blank"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+        }
     } else if cfg!(target_os = "windows") {
         std::process::Command::new("cmd")
             .args(["/C", "start", "chrome", "about:blank"])
@@ -219,8 +240,8 @@ fn wake_chrome() {
     };
 
     match result {
-        Ok(_) => debug!("Opened Chrome window to wake extension"),
-        Err(e) => debug!("Failed to open Chrome window: {e}"),
+        Ok(_) => debug!("Opened browser window to wake extension"),
+        Err(e) => debug!("Failed to open browser window: {e}"),
     }
 }
 
