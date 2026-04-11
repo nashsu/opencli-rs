@@ -82,7 +82,16 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
         app = app.subcommand(
             Command::new(ext.name.clone())
                 .about(ext.description.clone())
-                .allow_external_subcommands(true),
+                .disable_help_flag(true)
+                .disable_version_flag(true)
+                .arg(
+                    Arg::new("args")
+                        .num_args(0..)
+                        .trailing_var_arg(true)
+                        .allow_hyphen_values(true)
+                        .value_parser(clap::builder::OsStringValueParser::new())
+                        .help("Arguments passed through to the external CLI"),
+                ),
         );
     }
 
@@ -990,17 +999,10 @@ async fn main() {
 
         // Check if it's an external CLI
         if let Some(ext) = external_clis.iter().find(|e| e.name == site_name) {
-            // Gather remaining args for the external CLI
-            let ext_args: Vec<String> = match site_matches.subcommand() {
-                Some((sub, sub_matches)) => {
-                    let mut args = vec![sub.to_string()];
-                    if let Some(rest) = sub_matches.get_many::<std::ffi::OsString>("") {
-                        args.extend(rest.map(|s| s.to_string_lossy().to_string()));
-                    }
-                    args
-                }
-                None => vec![],
-            };
+            let ext_args: Vec<String> = site_matches
+                .get_many::<std::ffi::OsString>("args")
+                .map(|vals| vals.map(|s| s.to_string_lossy().to_string()).collect())
+                .unwrap_or_default();
 
             match autocli_external::execute_external_cli(&ext.name, &ext.binary, &ext_args)
                 .await
