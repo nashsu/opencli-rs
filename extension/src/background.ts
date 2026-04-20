@@ -304,6 +304,8 @@ async function handleCommand(cmd: Command): Promise<Result> {
         return await handleSessions(cmd);
       case 'set-file-input':
         return await handleSetFileInput(cmd, workspace);
+      case 'read-article':
+        return await handleReadArticle(cmd, workspace);
       default:
         return { id: cmd.id, ok: false, error: `Unknown action: ${cmd.action}` };
     }
@@ -728,6 +730,93 @@ async function handleSetFileInput(cmd: Command, workspace: string): Promise<Resu
   } catch (err) {
     return { id: cmd.id, ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+async function handleReadArticle(cmd: Command, workspace: string): Promise<Result> {
+  if (!cmd.url) return { id: cmd.id, ok: false, error: 'Missing url' };
+
+  // Step 1: navigate (reuses existing handler: creates window, resolves tab, waits for load).
+  const navResult = await handleNavigate(cmd, workspace);
+  if (!navResult.ok) return { id: cmd.id, ok: false, error: navResult.error };
+  const navData = navResult.data as { tabId: number; url?: string; title?: string } | undefined;
+  if (!navData?.tabId) return { id: cmd.id, ok: false, error: 'Navigate returned no tabId' };
+  const tabId = navData.tabId;
+
+  // Step 2: wait for DOM to settle so SPAs have rendered before extraction.
+  try {
+    await executor.evaluateAsync(tabId, `
+      new Promise(resolve => {
+        if (!document.body) { setTimeout(() => resolve('nobody'), 3000); return; }
+        let timer = null, cap = null;
+        const done = (r) => { clearTimeout(timer); clearTimeout(cap); obs.disconnect(); resolve(r); };
+        const reset = () => { clearTimeout(timer); timer = setTimeout(() => done('quiet'), 500); };
+        const obs = new MutationObserver(reset);
+        obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+        reset();
+        cap = setTimeout(() => done('capped'), 3000);
+      })
+    `);
+  } catch {
+    // DOM-stability is best-effort; extraction below is the real gate.
+  }
+
+  // Step 3: inject the vendored Readability library into the page's isolated world.
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['reader/Readability.js'],
+    });
+  } catch (err) {
+    return { id: cmd.id, ok: false, error: `Failed to inject Readability: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  // Step 4: run the extractor. Readability is now on globalThis in the isolated world.
+  let injectionResults: chrome.scripting.InjectionResult<unknown>[];
+  try {
+    injectionResults = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const R = (globalThis as unknown as { Readability?: new (doc: Document) => { parse(): unknown } }).Readability;
+        if (!R) return { __err: 'Readability not loaded in page context' };
+        // Clone so Readability's destructive parse does not mutate the live DOM.
+        const docClone = document.cloneNode(true) as Document;
+        const article = new R(docClone).parse() as null | {
+          title: string;
+          byline: string | null;
+          dir: string | null;
+          lang: string | null;
+          content: string;
+          textContent: string;
+          length: number;
+          excerpt: string;
+          siteName: string | null;
+          publishedTime: string | null;
+        };
+        if (!article) return { __err: 'Readability could not extract an article from this page' };
+        return {
+          title: article.title,
+          byline: article.byline,
+          dir: article.dir,
+          lang: article.lang,
+          content: article.content,
+          textContent: article.textContent,
+          length: article.length,
+          excerpt: article.excerpt,
+          siteName: article.siteName,
+          publishedTime: article.publishedTime,
+          url: document.location.href,
+        };
+      },
+    });
+  } catch (err) {
+    return { id: cmd.id, ok: false, error: `Failed to run extractor: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const payload = injectionResults[0]?.result as Record<string, unknown> | undefined;
+  if (!payload) return { id: cmd.id, ok: false, error: 'Extractor returned no result' };
+  if (typeof payload.__err === 'string') return { id: cmd.id, ok: false, error: payload.__err };
+
+  return { id: cmd.id, ok: true, data: payload };
 }
 
 async function handleSessions(cmd: Command): Promise<Result> {

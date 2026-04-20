@@ -25,3 +25,4 @@ clap_complete = "4"
 colored = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 inquire = "0.7"
+htmd = "0.2"

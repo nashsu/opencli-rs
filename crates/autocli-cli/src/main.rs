@@ -18,7 +18,7 @@ use std::str::FromStr;
 use tracing_subscriber::EnvFilter;
 
 use crate::args::coerce_and_validate_args;
-use crate::commands::{completion, doctor};
+use crate::commands::{completion, doctor, read};
 use crate::execution::execute_command;
 
 fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
@@ -130,6 +130,24 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
         .subcommand(
             Command::new("auth")
                 .about("Authenticate with AutoCLI"),
+        )
+        .subcommand(
+            Command::new("read")
+                .about("Extract main article content from a webpage (Readability)")
+                .arg(Arg::new("url").required(true).help("URL to read"))
+                .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .short('f')
+                        .default_value("markdown")
+                        .help("Output format: markdown (default), text, html, json"),
+                )
+                .arg(
+                    Arg::new("output")
+                        .long("output")
+                        .short('o')
+                        .help("Write output to file instead of stdout"),
+                ),
         );
 
     app
@@ -595,6 +613,31 @@ async fn main() {
         match site_name {
             "doctor" => {
                 doctor::run_doctor().await;
+                return;
+            }
+            "read" => {
+                let raw_url = site_matches.get_one::<String>("url").unwrap();
+                let url = if raw_url.starts_with("http://") || raw_url.starts_with("https://") {
+                    raw_url.clone()
+                } else {
+                    format!("https://{}", raw_url)
+                };
+                let format_str = site_matches.get_one::<String>("format").unwrap();
+                let format = match read::Format::from_str(format_str) {
+                    Some(f) => f,
+                    None => {
+                        eprintln!(
+                            "Unknown format '{format_str}'. Valid options: markdown, text, html, json"
+                        );
+                        std::process::exit(2);
+                    }
+                };
+                let output = site_matches.get_one::<String>("output").map(|s| s.as_str());
+
+                if let Err(e) = read::run(&url, format, output).await {
+                    eprintln!("{}: {}", t("获取文章失败", "Failed to read article"), e);
+                    std::process::exit(1);
+                }
                 return;
             }
             "completion" => {

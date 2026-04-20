@@ -15,4 +15,4 @@ pub use page::DaemonPage;
 pub use cdp::CdpPage;
 pub use daemon::Daemon;
 pub use daemon_client::DaemonClient;
-pub use types::{DaemonCommand, DaemonResult};
+pub use types::{DaemonCommand, DaemonResult, ReadArticle};

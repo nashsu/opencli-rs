@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 
 use crate::daemon_client::DaemonClient;
 use crate::dom_helpers;
-use crate::types::DaemonCommand;
+use crate::types::{DaemonCommand, ReadArticle};
 
 /// A page backed by the Daemon + Chrome Extension bridge.
 pub struct DaemonPage {
@@ -45,6 +45,18 @@ impl DaemonPage {
     async fn eval_js(&self, code: &str) -> Result<Value, CliError> {
         let cmd = self.cmd("exec").await.with_code(code);
         self.send(cmd).await
+    }
+
+    /// Navigate to `url`, run Readability in the page, and return the parsed article.
+    ///
+    /// Returns an error (rather than falling back) when Readability cannot
+    /// extract an article — strict mode is the only mode.
+    pub async fn read_article(&self, url: &str) -> Result<ReadArticle, CliError> {
+        let cmd = self.cmd("read-article").await.with_url(url);
+        let val = self.send(cmd).await?;
+        serde_json::from_value::<ReadArticle>(val).map_err(|e| {
+            CliError::argument(format!("Failed to parse article payload: {e}"))
+        })
     }
 }
 

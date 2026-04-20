@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoCLI",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Browser automation bridge for AutoCLI.ai — executes commands in isolated Chrome windows via a local daemon.",
   "permissions": [
     "debugger",

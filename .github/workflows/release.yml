@@ -101,7 +101,7 @@ jobs:
       - name: Package extension
         run: |
           cd extension
-          zip -r ../autocli-chrome-extension.zip dist/ icons/ selector/ manifest.json
+          zip -r ../autocli-chrome-extension.zip dist/ icons/ selector/ reader/ manifest.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

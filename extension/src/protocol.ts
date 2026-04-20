@@ -7,7 +7,7 @@
  * Everything else is just JS code sent via 'exec'.
  */
 
-export type Action = 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'sessions' | 'set-file-input' | 'cdp';
+export type Action = 'exec' | 'navigate' | 'tabs' | 'cookies' | 'screenshot' | 'close-window' | 'sessions' | 'set-file-input' | 'cdp' | 'read-article';
 
 export interface Command {
   /** Unique request ID */

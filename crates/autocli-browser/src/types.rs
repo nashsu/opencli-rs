@@ -56,6 +56,41 @@ impl DaemonCommand {
     }
 }
 
+/// Article payload returned by the extension's read-article action.
+///
+/// Mirrors the shape produced by Mozilla Readability (@mozilla/readability).
+/// All string fields default to empty when absent so the CLI can format
+/// safely without repeated `Option::as_deref().unwrap_or("")`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadArticle {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub byline: Option<String>,
+    #[serde(default)]
+    pub dir: Option<String>,
+    #[serde(default)]
+    pub lang: Option<String>,
+    /// Cleaned article HTML (Readability output).
+    #[serde(default)]
+    pub content: String,
+    /// Plain-text version of content.
+    #[serde(default)]
+    pub text_content: String,
+    #[serde(default)]
+    pub length: u64,
+    #[serde(default)]
+    pub excerpt: String,
+    #[serde(default)]
+    pub site_name: Option<String>,
+    #[serde(default)]
+    pub published_time: Option<String>,
+    /// Final URL after redirects (as seen by the extension).
+    #[serde(default)]
+    pub url: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonResult {
     pub id: String,
