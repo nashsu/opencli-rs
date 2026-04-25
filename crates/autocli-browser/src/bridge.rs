@@ -170,9 +170,9 @@ impl BrowserBridge {
 /// Check if Chrome/Chromium is running as a process.
 fn is_chrome_running() -> bool {
     if cfg!(target_os = "macos") {
-        // macOS: check for "Google Chrome" process
+        // macOS: check for "Google Chrome" or "Chromium" process
         std::process::Command::new("pgrep")
-            .args(["-x", "Google Chrome"])
+            .args(["-x", "-E", "^Google Chrome$|^Chromium$"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
