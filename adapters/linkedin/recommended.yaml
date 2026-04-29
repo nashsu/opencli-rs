@@ -1,0 +1,135 @@
+site: linkedin
+name: recommended
+description: "全量爬取 LinkedIn 推荐职位列表，自动翻页获取所有推荐岗位"
+meta_title: "Top job picks for you | LinkedIn"
+meta_description: ""
+meta_keywords: ""
+tags: [linkedin, jobs, recommended, career, recruitment]
+domain: www.linkedin.com
+strategy: header
+browser: true
+
+args:
+  limit:
+    type: int
+    required: false
+    default: 200
+    description: "返回结果数量上限 (0=无限制，爬取全部)"
+  start:
+    type: int
+    required: false
+    default: 0
+    description: "分页偏移量"
+
+columns: [rank, title, company, location, workplace_type, salary, posted_time, applicant_count, easy_apply, url]
+
+pipeline:
+  - navigate:
+      url: "https://www.linkedin.com/jobs/collections/recommended/"
+      settleMs: 5000
+
+  - evaluate: |
+      (async () => {
+        const allUrls = performance.getEntriesByType('resource').map(e => e.name);
+        let apiMatch = allUrls.find(u => u.includes('/voyager/api/graphql') && u.includes('jobCollectionSlug') && u.includes('recommended'));
+        if (!apiMatch) {
+          apiMatch = allUrls.find(u => u.includes('/voyager/api/graphql') && u.includes('jobCards'));
+        }
+        if (!apiMatch) return [];
+
+        const jsession = document.cookie.split(';').map(p => p.trim())
+          .find(p => p.startsWith('JSESSIONID='))?.slice('JSESSIONID='.length);
+        if (!jsession) throw new Error('LinkedIn JSESSIONID cookie not found. Please sign in.');
+        const csrf = jsession.replace(/^"|"$/g, '');
+
+        const parsed = new URL(apiMatch);
+        const queryId = parsed.searchParams.get('queryId') || '';
+
+        const limit = args.limit ?? 200;
+        let start = args.start || 0;
+        const BATCH = 24;
+        const allItems = [];
+
+        while (true) {
+          const remaining = limit > 0 ? limit - allItems.length : BATCH;
+          const count = Math.min(BATCH, remaining);
+          if (count <= 0) break;
+
+          const vars = `(count:${count},jobCollectionSlug:recommended,query:(origin:GENERIC_JOB_COLLECTIONS_LANDING),start:${start})`;
+          const fetchUrl = `/voyager/api/graphql?variables=${encodeURIComponent(vars).replace(/%3A/gi, ':').replace(/%2C/gi, ',').replace(/%28/gi, '(').replace(/%29/gi, ')')}&queryId=${queryId}`;
+
+          const resp = await fetch(fetchUrl, {
+            credentials: 'include',
+            headers: {
+              'csrf-token': csrf,
+              'x-restli-protocol-version': '2.0.0',
+            },
+          });
+
+          if (!resp.ok) break;
+
+          const json = await resp.json();
+          const elements = json?.data?.jobsDashJobCardsByJobCollections?.elements || [];
+
+          if (elements.length === 0) break;
+
+          for (const element of elements) {
+            const card = element?.jobCard?.jobPostingCard;
+            if (!card) continue;
+
+            const urn = card.preDashNormalizedJobPostingUrn || card.entityUrn || '';
+            const jobId = urn.match(/(\d+)/)?.[1] || '';
+
+            const listedItem = (card.footerItems || []).find(i => i?.type === 'LISTED_DATE' && i?.timeAt);
+            const postedTime = listedItem?.timeAt ? new Date(listedItem.timeAt).toISOString().slice(0, 10) : '';
+
+            const easyApply = (card.footerItems || []).some(i => i.type === 'EASY_APPLY_TEXT') ? 'true' : 'false';
+
+            // Extract workplace type from location string (e.g. "London (On-site)")
+            const locText = card.secondaryDescription?.text || '';
+            const workplaceMatch = locText.match(/\((Remote|Hybrid|On-site)\)/i);
+            const workplaceType = workplaceMatch ? workplaceMatch[1] : '';
+
+            // Clean location by removing workplace type suffix
+            const location = locText.replace(/\s*\((Remote|Hybrid|On-site)\)\s*/i, '').trim();
+
+            // Check for salary in tertiaryDescription
+            const salary = card.tertiaryDescription?.text || '';
+
+            allItems.push({
+              title: card.title?.text || card.jobPostingTitle || '',
+              company: card.primaryDescription?.text || '',
+              location: location,
+              workplace_type: workplaceType,
+              salary: salary,
+              posted_time: postedTime,
+              applicant_count: '',
+              easy_apply: easyApply,
+              url: jobId ? 'https://www.linkedin.com/jobs/view/' + jobId : '',
+            });
+          }
+
+          if (elements.length < count) break;
+          start += elements.length;
+
+          if (limit > 0 && allItems.length >= limit) break;
+        }
+
+        return allItems.slice(0, limit > 0 ? limit : undefined).map((item, i) => ({
+          rank: i + 1,
+          ...item,
+        }));
+      })()
+
+  - map:
+      rank: ${{ item.rank }}
+      title: ${{ item.title | default("N/A") }}
+      company: ${{ item.company | default("N/A") }}
+      location: ${{ item.location | default("N/A") }}
+      workplace_type: ${{ item.workplace_type | default("N/A") }}
+      salary: ${{ item.salary | default("N/A") }}
+      posted_time: ${{ item.posted_time | default("N/A") }}
+      applicant_count: ${{ item.applicant_count | default("N/A") }}
+      easy_apply: ${{ item.easy_apply | default("false") }}
+      url: ${{ item.url }}
+

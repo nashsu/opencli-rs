@@ -3,3 +3,8 @@
 /opencli
 test-results*.md
 twitter-downloads/
+
+# Local project files
+CHANGELOG.md
+/output/
+/test/
