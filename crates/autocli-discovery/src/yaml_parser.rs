@@ -195,6 +195,8 @@ domain: www.bilibili.com
         assert_eq!(cmd.name, "recommended");
         assert!(cmd.func.is_none(), "linkedin recommended must use YAML pipeline path");
         assert!(cmd.columns.iter().any(|col| col == "jd"));
+        assert!(cmd.columns.iter().any(|col| col == "external_url"));
+        assert!(yaml.contains("companyApplyUrl"));
 
         let with_jd = cmd
             .args

@@ -27,7 +27,7 @@ args:
     default: false
     description: "是否输出职位详情字段 jd (false=仅列表字段，true=抓取职位描述)"
 
-columns: [rank, title, company, location, workplace_type, salary, posted_time, applicant_count, easy_apply, url, jd]
+columns: [rank, title, company, location, workplace_type, salary, posted_time, applicant_count, easy_apply, url, external_url, jd]
 
 pipeline:
   - navigate:
@@ -115,6 +115,7 @@ pipeline:
               applicant_count: '',
               easy_apply: easyApply,
               url: url,
+              external_url: '',
               job_id: jobId,
               jd: '',
             });
@@ -126,8 +127,13 @@ pipeline:
           if (limit > 0 && allItems.length >= limit) break;
         }
 
-        const fetchJobDescription = async (jobId) => {
-          if (!jobId) return '';
+        const extractExternalApplyUrl = (json) => {
+          const offsiteApply = json?.applyMethod?.['com.linkedin.voyager.jobs.OffsiteApply'];
+          return offsiteApply?.companyApplyUrl || '';
+        };
+
+        const fetchJobDetails = async (jobId) => {
+          if (!jobId) return { jd: '', external_url: '' };
           try {
             const resp = await fetch(`/voyager/api/jobs/jobPostings/${jobId}`, {
               credentials: 'include',
@@ -136,23 +142,28 @@ pipeline:
                 'x-restli-protocol-version': '2.0.0',
               },
             });
-            if (!resp.ok) return '';
+            if (!resp.ok) return { jd: '', external_url: '' };
             const json = await resp.json();
-            return cleanText(json?.description?.text || json?.description || '');
+            return {
+              jd: cleanText(json?.description?.text || json?.description || ''),
+              external_url: extractExternalApplyUrl(json),
+            };
           } catch (_) {
-            return '';
+            return { jd: '', external_url: '' };
           }
         };
 
-        if (withJd) {
-          const detailConcurrency = 20;
-          for (let i = 0; i < allItems.length; i += detailConcurrency) {
-            const batch = allItems.slice(i, i + detailConcurrency);
-            const descriptions = await Promise.all(batch.map(item => fetchJobDescription(item.job_id)));
-            descriptions.forEach((description, index) => {
-              batch[index].jd = description;
-            });
-          }
+        const detailItems = allItems.filter(item => withJd || item.easy_apply === 'false');
+        const detailConcurrency = 20;
+        for (let i = 0; i < detailItems.length; i += detailConcurrency) {
+          const batch = detailItems.slice(i, i + detailConcurrency);
+          const details = await Promise.all(batch.map(item => fetchJobDetails(item.job_id)));
+          details.forEach((detail, index) => {
+            batch[index].external_url = detail.external_url;
+            if (withJd) {
+              batch[index].jd = detail.jd;
+            }
+          });
         }
 
         return allItems.slice(0, limit > 0 ? limit : undefined).map((item, i) => ({
@@ -172,4 +183,5 @@ pipeline:
       applicant_count: ${{ item.applicant_count | default("N/A") }}
       easy_apply: ${{ item.easy_apply | default("false") }}
       url: ${{ item.url }}
+      external_url: ${{ item.external_url | default("") }}
       jd: ${{ item.jd | default("") }}
