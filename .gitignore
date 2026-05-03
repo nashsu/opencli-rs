@@ -8,3 +8,4 @@ twitter-downloads/
 CHANGELOG.md
 /output/
 /test/
+.env
