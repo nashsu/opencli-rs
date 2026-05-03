@@ -134,27 +134,39 @@ pipeline:
 
         const fetchJobDetails = async (jobId) => {
           if (!jobId) return { jd: '', external_url: '' };
-          try {
-            const resp = await fetch(`/voyager/api/jobs/jobPostings/${jobId}`, {
-              credentials: 'include',
-              headers: {
-                'csrf-token': csrf,
-                'x-restli-protocol-version': '2.0.0',
-              },
-            });
-            if (!resp.ok) return { jd: '', external_url: '' };
-            const json = await resp.json();
-            return {
-              jd: cleanText(json?.description?.text || json?.description || ''),
-              external_url: extractExternalApplyUrl(json),
-            };
-          } catch (_) {
-            return { jd: '', external_url: '' };
+          const url = `/voyager/api/jobs/jobPostings/${jobId}`;
+          const headers = { 'csrf-token': csrf, 'x-restli-protocol-version': '2.0.0' };
+          for (let attempt = 0; attempt < 4; attempt++) {
+            try {
+              const resp = await fetch(url, { credentials: 'include', headers });
+              if (resp.ok) {
+                const json = await resp.json();
+                return {
+                  jd: cleanText(json?.description?.text || json?.description || ''),
+                  external_url: extractExternalApplyUrl(json),
+                };
+              }
+
+              // Retry on transient / throttling responses.
+              if ([429, 500, 502, 503, 504].includes(resp.status)) {
+                await sleep(250 * Math.pow(2, attempt));
+                continue;
+              }
+
+              // Non-retryable.
+              return { jd: '', external_url: '' };
+            } catch (_) {
+              await sleep(250 * Math.pow(2, attempt));
+            }
           }
+          return { jd: '', external_url: '' };
         };
 
         const detailItems = allItems.filter(item => withJd || item.easy_apply === 'false');
-        const detailConcurrency = 20;
+        // LinkedIn will sometimes throttle detail calls when scraping in bulk (e.g. --limit 0).
+        // Lower concurrency and retry on transient failures to avoid dropping external_url/jd.
+        const detailConcurrency = 8;
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
         for (let i = 0; i < detailItems.length; i += detailConcurrency) {
           const batch = detailItems.slice(i, i + detailConcurrency);
           const details = await Promise.all(batch.map(item => fetchJobDetails(item.job_id)));
