@@ -17,8 +17,10 @@ const RETRY_DELAYS_MS: [u64; 4] = [200, 500, 1000, 2000];
 impl DaemonClient {
     /// Create a new client pointing at the given port on localhost.
     pub fn new(port: u16) -> Self {
+        // 5 minute timeout — linkedin --limit 0 --with_jd can take several minutes
+        // due to scrolling the full job list and fetching descriptions for each.
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(300))
             .build()
             .expect("failed to build reqwest client");
         Self {
