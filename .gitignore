@@ -9,3 +9,6 @@ CHANGELOG.md
 /output/
 /test/
 .env
+
+# Python
+__pycache__/

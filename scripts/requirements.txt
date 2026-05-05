@@ -1,3 +1,11 @@
+# Install with uv (preferred):
+#   uv pip install -r scripts/requirements.txt
+#
+# If you want an isolated venv first:
+#   uv venv
+#   source .venv/bin/activate
+#   uv pip install -r scripts/requirements.txt
+
 httpx>=0.27.0
 supabase>=2.0.0
 jsonschema>=4.21.0
