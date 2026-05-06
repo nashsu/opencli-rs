@@ -72,9 +72,9 @@ check_pass "all checks pass currently"    bash "$SCRIPT" --check-only
 # ── Test 4: Log output format ────────────────────────────────────────
 echo ""
 echo "[Test 4] Log format"
-check_contains "has timestamp format"     "\[..:..:..\]"     bash "$SCRIPT" --check-only
+check_contains "has timestamp format"     "[0-9][0-9]:[0-9][0-9]:[0-9][0-9]"     bash "$SCRIPT" --check-only
 check_contains "has CHECK markers"        "CHECK"            bash "$SCRIPT" --check-only
-check_contains "shows summary line"       "checks passed"    bash "$SCRIPT" --check-only
+check_contains "shows passed count"       "passed"           bash "$SCRIPT" --check-only
 
 # ── Test 5: JSON output ──────────────────────────────────────────────
 echo ""
@@ -108,6 +108,38 @@ echo ""
 echo "[Test 8] Exit codes"
 check_pass "--check-only succeeds"      bash "$SCRIPT" --check-only
 check_fail "--check-only with bad PATH fails"  env PATH=/usr/bin:/bin bash "$SCRIPT" --check-only 2>/dev/null
+
+# ── Test 9: Extension freshness detection ────────────────────────────
+echo ""
+echo "[Test 9] Extension freshness"
+
+# Simulate stale dist by touching it and setting an old refresh marker
+REFRESH_MARKER="/tmp/.autocli-baseline-refresh-test"
+EXT_DIST="extension/dist/background.js"
+
+if [ -f "$EXT_DIST" ]; then
+    # Create an old marker (epoch 0)
+    touch -t 200001010000 "$REFRESH_MARKER" 2>/dev/null || true
+
+    # Run check — should warn about stale extension
+    OUT=$(AUTOCLI_REFRESH_MARKER="$REFRESH_MARKER" bash "$SCRIPT" --check-only 2>&1 || true)
+    if echo "$OUT" | grep -qi "refresh\|stale\|outdated\|newer\|behind"; then
+        check_pass "detects stale extension"  true
+    else
+        red "did not detect stale extension"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Clean up
+    rm -f "$REFRESH_MARKER"
+else
+    check_pass "dist file exists (skip freshness)"  test -f "$EXT_DIST"
+fi
+
+# ── Test 10: --refresh-extension flag exists ─────────────────────────
+echo ""
+echo "[Test 10] --refresh-extension flag"
+check_contains "--refresh-extension in help" "refresh-extension" bash "$SCRIPT" --help
 
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""

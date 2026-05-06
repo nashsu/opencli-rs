@@ -3,14 +3,17 @@
 # autocli-baseline.sh — Pre-flight diagnostic checks for autocli browser commands
 # =============================================================================
 # Usage:
-#   scripts/autocli-baseline.sh [--check-only] [--json] [-- <command...>]
+#   scripts/autocli-baseline.sh [--check-only] [--json] [--refresh-extension] [-- <command...>]
 #
-#   --check-only   Run checks only, don't execute any command
-#   --json          Output results as JSON (to stderr: human log, to stdout: JSON)
-#   -- <command>    After checks pass, execute this command with logging
+#   --check-only         Run checks only, don't execute any command
+#   --json                Output results as JSON (to stderr: human log, to stdout: JSON)
+#   --refresh-extension   Auto-refresh the Chrome extension if dist is newer (requires
+#                         browser-harness and CDP remote debugging access)
+#   -- <command>          After checks pass, execute this command with logging
 #
 # Examples:
 #   scripts/autocli-baseline.sh --check-only
+#   scripts/autocli-baseline.sh --refresh-extension --check-only
 #   scripts/autocli-baseline.sh -- autocli linkedin recommended --limit 0 -f json
 #   scripts/autocli-baseline.sh --json --check-only
 # =============================================================================
@@ -25,9 +28,18 @@ TIMEOUT_SHORT=5    # seconds for quick checks
 TIMEOUT_LONG=15    # seconds for network checks
 SCRIPT_START=$(date +%s)
 
+# Extension paths
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXT_DIR="${REPO_ROOT}/extension"
+EXT_DIST="${EXT_DIR}/dist/background.js"
+EXT_SRC="${EXT_DIR}/src/background.ts"
+REFRESH_MARKER="${AUTOCLI_REFRESH_MARKER:-${REPO_ROOT}/.baseline-last-refresh}"
+
 # ── Flags ──────────────────────────────────────────────────────────────────
 CHECK_ONLY=false
 JSON_OUT=false
+REFRESH_EXT=false
 COMMAND=()
 
 # ── Color helpers (auto-detect TTY) ───────────────────────────────────────
@@ -198,6 +210,104 @@ check_disk_space() {
     fi
 }
 
+# ── Extension freshness ────────────────────────────────────────────────────
+
+check_extension_freshness() {
+    log_check "extension freshness"
+
+    record_warn() {
+        echo -e "[${_YELLOW}$(TS)${_NC}] ${_BOLD}WARN${_NC}  $*" >&2
+        CHECK_RESULTS["$1"]="warn"
+        CHECK_DETAILS["$1"]="$2"
+    }
+
+    if [ ! -f "$EXT_DIST" ]; then
+        record_fail "freshness" "extension dist not found at $EXT_DIST — run: cd extension && npm run build"
+        return 1
+    fi
+
+    local dist_mtime
+    dist_mtime=$(stat -f %m "$EXT_DIST" 2>/dev/null || stat -c %Y "$EXT_DIST" 2>/dev/null || echo 0)
+
+    if [ -f "$REFRESH_MARKER" ]; then
+        local marker_mtime
+        marker_mtime=$(stat -f %m "$REFRESH_MARKER" 2>/dev/null || stat -c %Y "$REFRESH_MARKER" 2>/dev/null || echo 0)
+
+        if [ "$dist_mtime" -gt "$marker_mtime" ]; then
+            local age
+            age=$(( $(date +%s) - dist_mtime ))
+            record_fail "freshness" "extension dist is newer than last refresh (built ${age}s ago) — refresh in chrome://extensions or use --refresh-extension"
+            return 1
+        fi
+    else
+        # First run without a marker: warn but don't fail
+        local age
+        age=$(( $(date +%s) - dist_mtime ))
+        record_warn "freshness" "no refresh marker yet (dist built ${age}s ago) — use --refresh-extension to create one"
+        return 0
+    fi
+
+    record_pass "freshness" "extension is up to date"
+    return 0
+}
+
+refresh_extension() {
+    log_info "Attempting to auto-refresh Chrome extension..."
+
+    if ! command -v browser-harness &>/dev/null; then
+        log_error "browser-harness not available — cannot auto-refresh"
+        log_info  "Install: https://github.com/nashsu/browser-harness"
+        return 1
+    fi
+
+    log_info "Navigating to chrome://extensions and clicking refresh..."
+
+    local result
+    result=$(browser-harness -c "
+new_tab('chrome://extensions/')
+wait_for_load()
+# Ensure dev mode is on
+try:
+    dm_checked = js(\"document.querySelector('extensions-manager').shadowRoot.querySelector('extensions-toolbar').shadowRoot.querySelector('#devMode').checked\")
+    if not dm_checked:
+        js(\"document.querySelector('extensions-manager').shadowRoot.querySelector('extensions-toolbar').shadowRoot.querySelector('#devMode').click()\")
+except:
+    pass
+# Find AutoCLI card and click reload
+r = js('''(function(){
+  var items=document.querySelector(\"extensions-manager\").shadowRoot.querySelectorAll(\"extensions-item\");
+  for(var i=0;i<items.length;i++){
+    var s=items[i].shadowRoot; if(!s) continue;
+    var n=s.querySelector(\".name\")?.textContent||\"\";
+    if(n.indexOf(\"AutoCLI\")>=0){
+      var btn=s.querySelector(\"#reload-button\")||s.querySelector(\"[aria-label=Reload]\");
+      if(btn){btn.click();return \"refreshed\";}
+      return \"no-btn\";
+    }
+  }
+  return \"not-found\";
+})()''')
+print('auto-refresh:' + str(r))
+" 2>&1)
+
+    echo "$result" >&2
+
+    if echo "$result" | grep -q "refreshed"; then
+        touch "$REFRESH_MARKER"
+        log_pass "Extension auto-refreshed successfully"
+        return 0
+    elif echo "$result" | grep -q "no-btn"; then
+        log_warn "Found AutoCLI but reload button not found — refresh manually"
+        return 1
+    elif echo "$result" | grep -q "not-found"; then
+        log_error "AutoCLI extension not found in chrome://extensions"
+        return 1
+    else
+        log_warn "Auto-refresh uncertain — $result"
+        return 1
+    fi
+}
+
 # ── JSON output ────────────────────────────────────────────────────────────
 emit_json() {
     local elapsed
@@ -235,6 +345,7 @@ run_baseline() {
     check_extension_connected
 
     # Advisory checks — failures warn but don't block
+    check_extension_freshness
     check_linkedin_reachable
     check_network_dns
     check_output_dir
@@ -291,15 +402,16 @@ parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --help|-h)
-                echo "Usage: $0 [--check-only] [--json] [-- <command...>]"
+                echo "Usage: $0 [--check-only] [--json] [--refresh-extension] [-- <command...>]"
                 echo ""
                 echo "Pre-flight diagnostic checks for autocli browser commands."
                 echo ""
                 echo "Options:"
-                echo "  --check-only   Run checks only, don't execute any command"
-                echo "  --json         Output final results as JSON to stdout"
-                echo "  --help         Show this help"
-                echo "  -- <command>   Command to run after checks pass"
+                echo "  --check-only          Run checks only, don't execute any command"
+                echo "  --json                Output final results as JSON to stdout"
+                echo "  --refresh-extension   Auto-refresh Chrome extension if dist is stale"
+                echo "  --help                Show this help"
+                echo "  -- <command>          Command to run after checks pass"
                 exit 0
                 ;;
             --check-only)
@@ -308,6 +420,10 @@ parse_args() {
                 ;;
             --json)
                 JSON_OUT=true
+                shift
+                ;;
+            --refresh-extension)
+                REFRESH_EXT=true
                 shift
                 ;;
             --)
@@ -332,6 +448,27 @@ parse_args() {
 # ── Entry point ────────────────────────────────────────────────────────────
 main() {
     parse_args "$@"
+
+    # Auto-refresh extension if requested
+    if [ "$REFRESH_EXT" = true ]; then
+        if [ ! -f "$EXT_DIST" ]; then
+            log_error "Cannot refresh — extension dist not found at $EXT_DIST"
+            log_info  "Run: cd extension && npm run build"
+            exit 1
+        fi
+        dist_mtime=$(stat -f %m "$EXT_DIST" 2>/dev/null || stat -c %Y "$EXT_DIST" 2>/dev/null || echo 0)
+        if [ -f "$REFRESH_MARKER" ]; then
+            marker_mtime=$(stat -f %m "$REFRESH_MARKER" 2>/dev/null || stat -c %Y "$REFRESH_MARKER" 2>/dev/null || echo 0)
+            if [ "$dist_mtime" -le "$marker_mtime" ]; then
+                log_info "Extension already up to date, skipping refresh"
+            else
+                refresh_extension || log_warn "Auto-refresh failed — continuing anyway"
+            fi
+        else
+            refresh_extension || log_warn "Auto-refresh failed — continuing anyway"
+        fi
+        echo "" >&2
+    fi
 
     local baseline_ok=true
     run_baseline || baseline_ok=false
