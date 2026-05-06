@@ -135,7 +135,7 @@ export async function evaluate(tabId: number, expression: string, aggressiveRetr
       // Only retry on attach/debugger errors, not on JS eval errors
       const isNavigateError = msg.includes('Inspected target navigated') || msg.includes('Target closed');
       const isAttachError = isNavigateError || msg.includes('attach failed') || msg.includes('Debugger is not attached')
-        || msg.includes('chrome-extension://');
+        || msg.includes('chrome-extension://') || msg.includes('Detached while handling command');
       if (isAttachError && attempt < MAX_EVAL_RETRIES) {
         attached.delete(tabId); // Force re-attach on next attempt
         // SPA navigations recover quickly; debugger detach needs longer
