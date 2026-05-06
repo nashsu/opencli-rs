@@ -147,16 +147,29 @@ type AutomationSession = {
 const automationSessions = new Map<string, AutomationSession>();
 const WINDOW_IDLE_TIMEOUT = 30000; // 30s — quick cleanup after command finishes
 
+// Track active commands per workspace to prevent idle timeout during execution.
+const activeCommands = new Map<string, number>();
+
 function getWorkspaceKey(workspace?: string): string {
   return workspace?.trim() || 'default';
 }
 
-function resetWindowIdleTimer(workspace: string): void {
+function clearWindowIdleTimer(session: AutomationSession): void {
+  if (session.idleTimer) {
+    clearTimeout(session.idleTimer);
+    session.idleTimer = null;
+  }
+}
+
+function startWindowIdleTimer(workspace: string): void {
   const session = automationSessions.get(workspace);
   if (!session) return;
-  if (session.idleTimer) clearTimeout(session.idleTimer);
+  if ((activeCommands.get(workspace) || 0) > 0) return; // don't start while commands active
+  clearWindowIdleTimer(session);
   session.idleDeadlineAt = Date.now() + WINDOW_IDLE_TIMEOUT;
   session.idleTimer = setTimeout(async () => {
+    // Double-check no active commands when the timer fires
+    if ((activeCommands.get(workspace) || 0) > 0) return;
     const current = automationSessions.get(workspace);
     if (!current) return;
     try {
@@ -167,6 +180,14 @@ function resetWindowIdleTimer(workspace: string): void {
     }
     automationSessions.delete(workspace);
   }, WINDOW_IDLE_TIMEOUT);
+}
+
+function resetWindowIdleTimer(workspace: string): void {
+  const session = automationSessions.get(workspace);
+  if (!session) return;
+  clearWindowIdleTimer(session);
+  if ((activeCommands.get(workspace) || 0) > 0) return; // don't start while commands active
+  startWindowIdleTimer(workspace);
 }
 
 /** Get or create the dedicated automation window.
@@ -282,8 +303,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 async function handleCommand(cmd: Command): Promise<Result> {
   const workspace = getWorkspaceKey(cmd.workspace);
-  // Reset idle timer on every command (window stays alive while active)
-  resetWindowIdleTimer(workspace);
+  // Clear idle timer and track active command to prevent window closure during execution
+  const session = automationSessions.get(workspace);
+  if (session) clearWindowIdleTimer(session);
+  activeCommands.set(workspace, (activeCommands.get(workspace) || 0) + 1);
   try {
     switch (cmd.action) {
       case 'exec':
@@ -315,6 +338,14 @@ async function handleCommand(cmd: Command): Promise<Result> {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    const count = (activeCommands.get(workspace) || 0) - 1;
+    if (count <= 0) {
+      activeCommands.delete(workspace);
+      startWindowIdleTimer(workspace);
+    } else {
+      activeCommands.set(workspace, count);
+    }
   }
 }
 
