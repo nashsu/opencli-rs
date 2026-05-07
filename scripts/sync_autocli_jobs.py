@@ -133,6 +133,10 @@ def normalize_job(source: str, raw_record: dict[str, Any]) -> NormalizedJob | No
     url_hash = _get_first_key(raw_record, ("url_hash",))
     source_channel = _get_first_key(raw_record, ("source_channel",))
     apply_type = _get_first_key(raw_record, ("apply_type",))
+    if not apply_type:
+        easy_apply_raw = _get_first_key(raw_record, ("easy_apply",))
+        if easy_apply_raw and easy_apply_raw.lower() in ("true", "1", "yes"):
+            apply_type = "easy_apply"
 
     return NormalizedJob(
         source=source,
