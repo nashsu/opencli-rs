@@ -434,7 +434,25 @@ def main(argv: list[str] | None = None) -> int:
         score_result = None
         if not args.disable_scoring:
             try:
-                score_result = score_job(rec)
+                # Build a dict with normalized keys so score_job can find
+                # job_title, company_name, job_description, post_time, etc.
+                # even when the raw record uses different key names.
+                score_result = score_job({
+                    "job_title": job.job_title,
+                    "company_name": job.company_name,
+                    "location": job.location,
+                    "salary": job.salary,
+                    "post_time": job.post_time,
+                    "apply_url": job.apply_url,
+                    "external_url": job.external_url,
+                    "job_description": job.job_description,
+                    "apply_type": job.apply_type,
+                    "source_channel": job.source_channel,
+                    "workplace_type": _get_first_key(
+                        job.raw_record, ("workplace_type",)
+                    ),
+                    "raw_record": job.raw_record,
+                })
             except Exception:
                 # Scoring is non-critical -- log and continue without it
                 pass
