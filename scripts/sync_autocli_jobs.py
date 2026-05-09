@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Sync AutoCLI job JSON into Supabase with optional priority scoring."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +12,14 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import urlparse, urlunparse
+
+# Ensure project root is on sys.path for `scripts.*` imports when invoked as
+#   python scripts/sync_autocli_jobs.py
+_project_root = str(pathlib.Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from scripts.job_priority_scorer import score_job
 
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -314,7 +323,14 @@ def _create_supabase_client(url: str | None, key: str | None):
     return create_client(url, key)
 
 
-def upsert_job(client, job: NormalizedJob) -> str:
+def upsert_job(
+    client,
+    job: NormalizedJob,
+    priority_score: float | None = None,
+    priority_tier: str | None = None,
+    priority_version: str | None = None,
+    priority_signals: dict | None = None,
+) -> str:
     params: dict[str, Any] = {
         "p_source": job.source,
         "p_identity_hash": job.identity_hash,
@@ -337,6 +353,14 @@ def upsert_job(client, job: NormalizedJob) -> str:
         params["p_source_channel"] = job.source_channel
     if job.apply_type:
         params["p_apply_type"] = job.apply_type
+    if priority_score is not None:
+        params["p_priority_score"] = priority_score
+    if priority_tier is not None:
+        params["p_priority_tier"] = priority_tier
+    if priority_version is not None:
+        params["p_priority_version"] = priority_version
+    if priority_signals is not None:
+        params["p_priority_signals"] = priority_signals
     resp = client.rpc("upsert_job", params).execute()
     # supabase-py returns either scalar or list depending on RPC return shape; normalize.
     data = resp.data
@@ -361,6 +385,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--env-file",
         help="Optional path to a .env file to load (does not override existing env vars).",
+    )
+    parser.add_argument(
+        "--disable-scoring",
+        action="store_true",
+        help="Skip priority scoring (useful for testing or backfill via separate script).",
     )
     args = parser.parse_args(argv)
 
@@ -390,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         records = records[: args.limit]
 
     normalized: list[NormalizedJob] = []
+    scored: list[tuple[NormalizedJob, dict[str, Any] | None]] = []
     skipped = 0
     for idx, rec in enumerate(records):
         job = normalize_job(args.source, rec)
@@ -401,6 +431,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
         normalized.append(job)
+        score_result = None
+        if not args.disable_scoring:
+            try:
+                score_result = score_job(rec)
+            except Exception:
+                # Scoring is non-critical -- log and continue without it
+                pass
+        scored.append((job, score_result))
 
     if args.dry_run:
         # Group by canonical_job_url to find duplicates
@@ -431,7 +469,25 @@ def main(argv: list[str] | None = None) -> int:
             "skipped": skipped,
             "canonical_distinct_jobs": len(url_groups),
             "duplicate_groups": len(duplicate_groups),
+            "scoring": not args.disable_scoring,
         }
+        if not args.disable_scoring:
+            scored_results = [
+                r for _, r in scored if r is not None
+            ]
+            if scored_results:
+                scores = [r.score for r in scored_results]
+                tiers = [r.tier for r in scored_results]
+                report["priority_scores"] = {
+                    "min": round(min(scores), 1),
+                    "max": round(max(scores), 1),
+                    "avg": round(sum(scores) / len(scores), 1),
+                    "total_scored": len(scored_results),
+                }
+                tier_counts: dict[str, int] = {}
+                for t in tiers:
+                    tier_counts[t] = tier_counts.get(t, 0) + 1
+                report["priority_tier_distribution"] = tier_counts
         if duplicate_groups:
             report["duplicates"] = duplicate_groups
 
@@ -445,9 +501,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     upserted = 0
-    for idx, job in enumerate(normalized):
+    for idx, (job, score_result) in enumerate(scored):
         try:
-            _ = upsert_job(client, job)
+            if score_result is not None:
+                _ = upsert_job(
+                    client,
+                    job,
+                    priority_score=score_result.score,
+                    priority_tier=score_result.tier,
+                    priority_version=score_result.version,
+                    priority_signals=score_result.signals,
+                )
+            else:
+                _ = upsert_job(client, job)
             upserted += 1
         except Exception as exc:
             print(
@@ -456,12 +522,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    scored_count = sum(1 for _, r in scored if r is not None)
     print(
         json.dumps(
             {
                 "source": args.source,
                 "input_rows": len(records),
                 "upserted": upserted,
+                "scored": scored_count,
                 "skipped": skipped,
             },
             indent=2,
