@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
                 "p_job_id": r["job_id"],
                 "p_priority_score": r["score"],
                 "p_priority_tier": r["tier"],
-                "p_priority_version": r["version"],
+                "p_priority_scorer_version": r["version"],
                 "p_priority_signals": {},
             }).execute()
             updated += 1

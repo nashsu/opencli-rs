@@ -12,7 +12,7 @@ alter table jobs.jobs
 add column if not exists priority_tier text;
 
 alter table jobs.jobs
-add column if not exists priority_version text;
+add column if not exists priority_scorer_version text;
 
 alter table jobs.jobs
 add column if not exists priority_signals jsonb;
@@ -23,10 +23,10 @@ add column if not exists priority_scored_at timestamptz;
 -- Validate priority_tier values
 alter table jobs.jobs
 add constraint jobs_jobs_priority_tier_check
-check (priority_tier in ('high', 'medium', 'low', 'reject'));
+check (priority_tier in ('high', 'medium', 'low', 'reject', 'unknown'));
 
-create index if not exists jobs_jobs_priority_score_idx on jobs.jobs (priority_score desc);
-create index if not exists jobs_jobs_priority_tier_idx on jobs.jobs (priority_tier);
+create index if not exists jobs_jobs_priority_score_idx on jobs.jobs (priority_score desc, last_seen_at desc);
+create index if not exists jobs_jobs_priority_tier_idx on jobs.jobs (priority_tier, priority_score desc);
 create index if not exists jobs_jobs_priority_scored_at_idx on jobs.jobs (priority_scored_at desc);
 
 -- 2. Drop old upsert_job RPCs and recreate with priority params
@@ -52,7 +52,7 @@ create or replace function jobs.upsert_job(
   p_apply_type text default 'unknown',
   p_priority_score numeric default null,
   p_priority_tier text default null,
-  p_priority_version text default null,
+  p_priority_scorer_version text default null,
   p_priority_signals jsonb default null
 )
 returns uuid
@@ -82,7 +82,7 @@ begin
     apply_type,
     priority_score,
     priority_tier,
-    priority_version,
+    priority_scorer_version,
     priority_signals,
     first_seen_at,
     last_seen_at,
@@ -110,7 +110,7 @@ begin
     nullif(p_apply_type, ''),
     case when p_priority_score is not null then p_priority_score else null end,
     nullif(p_priority_tier, ''),
-    nullif(p_priority_version, ''),
+    nullif(p_priority_scorer_version, ''),
     p_priority_signals,
     now(),
     now(),
@@ -137,7 +137,7 @@ begin
     apply_type = coalesce(nullif(excluded.apply_type, ''), jobs.jobs.apply_type),
     priority_score = case when excluded.priority_score is not null then excluded.priority_score else jobs.jobs.priority_score end,
     priority_tier = case when excluded.priority_tier is not null then excluded.priority_tier else jobs.jobs.priority_tier end,
-    priority_version = case when excluded.priority_version is not null then excluded.priority_version else jobs.jobs.priority_version end,
+    priority_scorer_version = case when excluded.priority_scorer_version is not null then excluded.priority_scorer_version else jobs.jobs.priority_scorer_version end,
     priority_signals = case when excluded.priority_signals is not null then excluded.priority_signals else jobs.jobs.priority_signals end,
     priority_scored_at = case
       when excluded.priority_score is not null then now()
@@ -178,7 +178,7 @@ create or replace function public.upsert_job(
   p_apply_type text default 'unknown',
   p_priority_score numeric default null,
   p_priority_tier text default null,
-  p_priority_version text default null,
+  p_priority_scorer_version text default null,
   p_priority_signals jsonb default null
 )
 returns uuid
@@ -205,7 +205,7 @@ as $$
     p_apply_type,
     p_priority_score,
     p_priority_tier,
-    p_priority_version,
+    p_priority_scorer_version,
     p_priority_signals
   );
 $$;

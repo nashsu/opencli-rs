@@ -328,7 +328,7 @@ def upsert_job(
     job: NormalizedJob,
     priority_score: float | None = None,
     priority_tier: str | None = None,
-    priority_version: str | None = None,
+    priority_scorer_version: str | None = None,
     priority_signals: dict | None = None,
 ) -> str:
     params: dict[str, Any] = {
@@ -357,8 +357,8 @@ def upsert_job(
         params["p_priority_score"] = priority_score
     if priority_tier is not None:
         params["p_priority_tier"] = priority_tier
-    if priority_version is not None:
-        params["p_priority_version"] = priority_version
+    if priority_scorer_version is not None:
+        params["p_priority_scorer_version"] = priority_scorer_version
     if priority_signals is not None:
         params["p_priority_signals"] = priority_signals
     resp = client.rpc("upsert_job", params).execute()
@@ -390,6 +390,18 @@ def main(argv: list[str] | None = None) -> int:
         "--disable-scoring",
         action="store_true",
         help="Skip priority scoring (useful for testing or backfill via separate script).",
+    )
+    parser.add_argument(
+        "--min-priority-score",
+        type=float,
+        default=None,
+        help="Only upsert jobs with priority_score >= this value (default: upsert all).",
+    )
+    parser.add_argument(
+        "--priority-tier",
+        choices=["high", "medium", "low", "reject"],
+        default=None,
+        help="Only upsert jobs with this priority_tier or above (default: upsert all).",
     )
     args = parser.parse_args(argv)
 
@@ -459,7 +471,6 @@ def main(argv: list[str] | None = None) -> int:
         scored.append((job, score_result))
 
     if args.dry_run:
-        # Group by canonical_job_url to find duplicates
         from collections import defaultdict
 
         url_groups: dict[str, list[NormalizedJob]] = defaultdict(list)
@@ -505,7 +516,56 @@ def main(argv: list[str] | None = None) -> int:
                 tier_counts: dict[str, int] = {}
                 for t in tiers:
                     tier_counts[t] = tier_counts.get(t, 0) + 1
-                report["priority_tier_distribution"] = tier_counts
+                report["priority_tiers"] = tier_counts
+                report["low_priority_count"] = tier_counts.get("reject", 0)
+
+                # Top 10 priority jobs
+                sorted_with_job = sorted(
+                    [(j, r) for j, r in scored if r is not None],
+                    key=lambda x: x[1].score,
+                    reverse=True,
+                )
+                top_10 = []
+                for nj, sr in sorted_with_job[:10]:
+                    sig = sr.signals
+                    top_10.append({
+                        "title": nj.job_title,
+                        "company": nj.company_name,
+                        "location": nj.location,
+                        "score": sr.score,
+                        "tier": sr.tier,
+                        "key_signals": {
+                            "compensation": sig.get("compensation", {}).get("score"),
+                            "role_fit": sig.get("role_fit", {}).get("score"),
+                            "application_path": sig.get("application_friction", {}).get("reason"),
+                            "source_quality": sig.get("source_quality", {}).get("score"),
+                        },
+                    })
+                report["top_priority_jobs"] = top_10
+
+                # Source-quality summary
+                recruiter_like = 0
+                aggregator_like = 0
+                low_info_easy_apply = 0
+                raw_jd_fallback = 0
+                for r in scored_results:
+                    sq = r.signals.get("source_quality", {})
+                    if sq.get("recruiter_company") or sq.get("recruiter_phrase"):
+                        recruiter_like += 1
+                    ap = r.signals.get("application_path", {})
+                    if ap.get("is_aggregator"):
+                        aggregator_like += 1
+                    if sq.get("easy_apply_no_owned_url") and sq.get("missing_salary"):
+                        low_info_easy_apply += 1
+                    dq = r.signals.get("data_quality", {})
+                    if dq.get("description_source") in ("raw", "raw_record.jd"):
+                        raw_jd_fallback += 1
+                report["source_quality_summary"] = {
+                    "recruiter_like_rows": recruiter_like,
+                    "aggregator_like_rows": aggregator_like,
+                    "low_information_easy_apply_rows": low_info_easy_apply,
+                    "raw_jd_fallback_rows": raw_jd_fallback,
+                }
         if duplicate_groups:
             report["duplicates"] = duplicate_groups
 
@@ -518,8 +578,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
+    # ── Priority filtering ──────────────────────────────────────────────
+    _TIER_ORDER = {"reject": 1, "low": 2, "medium": 3, "high": 4}
+
+    def _passes_filter(score_result) -> bool:
+        if score_result is None:
+            return args.min_priority_score is None and args.priority_tier is None
+        if args.min_priority_score is not None and score_result.score < args.min_priority_score:
+            return False
+        if args.priority_tier is not None:
+            return _TIER_ORDER.get(score_result.tier, 0) >= _TIER_ORDER[args.priority_tier]
+        return True
+
     upserted = 0
     for idx, (job, score_result) in enumerate(scored):
+        if not _passes_filter(score_result):
+            continue
         try:
             if score_result is not None:
                 _ = upsert_job(
@@ -527,7 +601,7 @@ def main(argv: list[str] | None = None) -> int:
                     job,
                     priority_score=score_result.score,
                     priority_tier=score_result.tier,
-                    priority_version=score_result.version,
+                    priority_scorer_version=score_result.version,
                     priority_signals=score_result.signals,
                 )
             else:

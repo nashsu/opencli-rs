@@ -9,7 +9,7 @@ create or replace function jobs.update_job_priority_score(
   p_job_id uuid,
   p_priority_score numeric,
   p_priority_tier text,
-  p_priority_version text,
+  p_priority_scorer_version text,
   p_priority_signals jsonb
 )
 returns void
@@ -21,7 +21,7 @@ begin
   set
     priority_score = p_priority_score,
     priority_tier = p_priority_tier,
-    priority_version = p_priority_version,
+    priority_scorer_version = p_priority_scorer_version,
     priority_signals = p_priority_signals,
     priority_scored_at = now(),
     updated_at = now()
@@ -34,7 +34,7 @@ create or replace function public.update_job_priority_score(
   p_job_id uuid,
   p_priority_score numeric,
   p_priority_tier text,
-  p_priority_version text,
+  p_priority_scorer_version text,
   p_priority_signals jsonb
 )
 returns void
@@ -45,7 +45,7 @@ as $$
     p_job_id,
     p_priority_score,
     p_priority_tier,
-    p_priority_version,
+    p_priority_scorer_version,
     p_priority_signals
   );
 $$;
