@@ -6,9 +6,11 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.parse import urlparse, urlunparse
 
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -36,6 +38,136 @@ def _get_first_key(record: dict[str, Any], keys: Iterable[str]) -> str:
             v = _normalize_text(record[key])
             if v:
                 return v
+    return ""
+
+
+# ── URL canonicalization (for dedup of ATS/external job URLs) ──────────
+
+LINKEDIN_PATTERN = re.compile(
+    r"^https?://(?:www\.)?linkedin\.com/",
+    re.IGNORECASE,
+)
+
+ATS_DOMAINS = frozenset({
+    "myworkdayjobs.com",
+    "greenhouse.io",
+    "lever.co",
+    "recruitee.com",
+    "applytojob.com",
+    "workable.com",
+    "breezy.hr",
+    "smartrecruiters.com",
+    "icims.com",
+    "successfactors.eu",
+    "successfactors.com",
+    "oraclecloud.com",
+    "taleo.net",
+})
+
+TRACKING_PARAMS = frozenset({
+    "source", "share_id", "si", "li_fat_id", "trk", "trackingId", "tracking_id",
+    "ref", "referrer",
+    "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid",
+    "msclkid", "twclid", "sc_campaign", "sc_channel", "sc_content",
+    "sc_medium", "sc_outcome", "sc_geo", "sc_country",
+    "gh_src", "lever_source", "lever-source",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+})
+
+
+def _is_linkedin_url(url: str | None) -> bool:
+    """Return True if *url* is a linkedin.com URL."""
+    if not url:
+        return False
+    return bool(LINKEDIN_PATTERN.match(url.strip()))
+
+
+def _is_ats_url(url: str | None) -> bool:
+    """Return True if *url* points to a known ATS / career-portal domain."""
+    if not url:
+        return False
+    try:
+        host = urlparse(url.strip()).hostname or ""
+    except Exception:
+        return False
+    host = host.lower()
+    # Strip www. prefix for matching
+    if host.startswith("www."):
+        host = host[4:]
+    for domain in ATS_DOMAINS:
+        if host == domain or host.endswith("." + domain):
+            return True
+    # Generic career portals (catch-alls after known ATS domains)
+    if host.endswith(".myworkdayjobs.com"):
+        return True
+    return False
+
+
+def _canonicalize_url(raw_url: str | None) -> str:
+    """Normalize a URL for dedup: lowercase, strip trailing slash, remove tracking params.
+
+    Returns the normalized URL string, or empty string if input is empty/falsy.
+    """
+    if not raw_url:
+        return ""
+    try:
+        parsed = urlparse(raw_url.strip())
+        scheme = parsed.scheme.lower()
+        netloc = parsed.netloc.lower()
+        # Strip trailing slash from path
+        path = parsed.path.rstrip("/")
+        if not path:
+            path = "/"
+        # Filter tracking query params
+        cleaned_pairs: list[str] = []
+        if parsed.query:
+            for pair in parsed.query.split("&"):
+                k, _, v = pair.partition("=")
+                if k not in TRACKING_PARAMS:
+                    cleaned_pairs.append(f"{k}={v}")
+        cleaned_query = "&".join(cleaned_pairs)
+        result = urlunparse((scheme, netloc, path, parsed.params, cleaned_query, ""))
+        return result.rstrip("?")
+    except Exception:
+        return raw_url.strip()
+
+
+def _extract_canonical_job_url(
+    apply_url: str,
+    external_url: str,
+) -> str:
+    """Determine the canonical job URL to use for identity computation.
+
+    Priority (first non-empty, non-LinkedIn as identity):
+      1. external_url if it is an ATS URL
+      2. external_url if apply_url is LinkedIn (prefer any external_url over LinkedIn)
+      3. apply_url if it is an ATS URL (not LinkedIn)
+      4. apply_url as fallback (even if LinkedIn)
+      5. empty string
+    """
+    apply_url_s = apply_url.strip() if apply_url else ""
+    external_url_s = external_url.strip() if external_url else ""
+
+    # Rule 1: external_url is ATS → use it
+    if _is_ats_url(external_url_s):
+        return _canonicalize_url(external_url_s)
+
+    # Rule 2: apply_url is LinkedIn AND external_url exists → use external_url
+    if _is_linkedin_url(apply_url_s) and external_url_s:
+        return _canonicalize_url(external_url_s)
+
+    # Rule 3: apply_url is ATS (not LinkedIn) → use it
+    if _is_ats_url(apply_url_s):
+        return _canonicalize_url(apply_url_s)
+
+    # Rule 4: apply_url exists (even LinkedIn) → use it
+    if apply_url_s:
+        return _canonicalize_url(apply_url_s)
+
+    # Rule 5: external_url exists → use it
+    if external_url_s:
+        return _canonicalize_url(external_url_s)
+
     return ""
 
 
@@ -115,11 +247,10 @@ def normalize_job(source: str, raw_record: dict[str, Any]) -> NormalizedJob | No
     post_time = _get_first_key(raw_record, ("post_time", "postTime", "posted_date", "postedDate"))
     job_description = _get_first_key(raw_record, ("job_description", "jobDescription", "description"))
 
-    identity_source = ""
-    if apply_url:
-        identity_source = apply_url
-    elif external_url:
-        identity_source = external_url
+    # Use canonical URL for identity, not raw apply_url (which may be a LinkedIn referrer)
+    canonical_url = _extract_canonical_job_url(apply_url, external_url)
+    if canonical_url:
+        identity_source = canonical_url
     else:
         if not job_title or not company_name:
             return None
@@ -272,17 +403,39 @@ def main(argv: list[str] | None = None) -> int:
         normalized.append(job)
 
     if args.dry_run:
-        print(
-            json.dumps(
-                {
-                    "source": args.source,
-                    "input_rows": len(records),
-                    "will_process": len(normalized),
-                    "skipped": skipped,
-                },
-                indent=2,
-            )
-        )
+        # Group by canonical_job_url to find duplicates
+        from collections import defaultdict
+
+        url_groups: dict[str, list[NormalizedJob]] = defaultdict(list)
+        for job in normalized:
+            url_groups[job.identity_hash].append(job)
+
+        duplicate_groups: list[dict[str, Any]] = []
+        for id_hash, jobs in url_groups.items():
+            if len(jobs) > 1:
+                duplicate_groups.append(
+                    {
+                        "identity_hash": id_hash,
+                        "count": len(jobs),
+                        "job_title": jobs[0].job_title,
+                        "company_name": jobs[0].company_name,
+                        "apply_urls": sorted(set(j.apply_url for j in jobs)),
+                        "external_urls": sorted(set(j.external_url for j in jobs)),
+                    }
+                )
+
+        report: dict[str, Any] = {
+            "source": args.source,
+            "input_rows": len(records),
+            "will_process": len(normalized),
+            "skipped": skipped,
+            "canonical_distinct_jobs": len(url_groups),
+            "duplicate_groups": len(duplicate_groups),
+        }
+        if duplicate_groups:
+            report["duplicates"] = duplicate_groups
+
+        print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
 
     try:
