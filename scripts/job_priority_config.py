@@ -203,7 +203,7 @@ AGGREGATOR_RE = re.compile(
 ZERO_WIDTH_RE = re.compile(r"[​-‍﻿]")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 DECORATIVE_SYMBOL_RE = re.compile(r"[\U0001F300-\U0001FAFF☀-➿]")
-REPEATED_PUNCT_RE = re.compile(r"([!?.•●▪◦])\1{2,}")
+REPEATED_PUNCT_RE = re.compile(r"([!?.•●▪◦])\1{1,}")
 
 # ---------------------------------------------------------------------------
 # Tier thresholds
