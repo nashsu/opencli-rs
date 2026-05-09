@@ -71,9 +71,10 @@ class TestNormalizedJobFields(unittest.TestCase):
         from scripts.sync_autocli_jobs import normalize_job
 
         rec = _make_raw_record()
-        # Remove new fields
+        # Remove new fields and easy_apply (which triggers apply_type inference)
         rec.pop("source_channel", None)
         rec.pop("apply_type", None)
+        rec.pop("easy_apply", None)
         rec.pop("url_hash", None)
         job = normalize_job("linkedin", rec)
 

@@ -1,0 +1,66 @@
+[  225242ms] [LOG] 1778015183896 @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/sharebx.js:7
+[  225242ms] [LOG] 1778015183896 @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/sharebx.js:19
+[  225316ms] [LOG] cssjs @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/css.js:329
+[  225355ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069440827&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  226173ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069441515&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  228177ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069443727&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  232683ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448229&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  232683ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448229&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  232693ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448242&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  232694ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448242&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  232694ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448243&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  233198ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448746&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  233198ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448746&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  233198ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069448746&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  235202ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069450750&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  235202ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069450751&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  235202ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069450751&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  239707ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  239707ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  239708ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  239708ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  239708ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  239708ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069455255&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  241253ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069456803&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  241756ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069457306&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  243760ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069459310&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  248267ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069463814&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1:0
+[  248267ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069463814&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=6&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  273262ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069488811&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  273766ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069489315&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  275769ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069491318&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  280271ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069495821&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1:0
+[  280271ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069495821&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=200&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60
+[  333269ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069548815&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  333772ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069549322&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  335776ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069551326&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  340288ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069555830&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1:0
+[  340289ms] [ERROR]  ERROR  [Statsig] A networking error occurred during POST request to https://chatgpt.com/ces/v1/rgstr?k=client-nb0qtYlZuy2tCMN5s5ncnuIBCJncjRViT0IzFm7GqST&st=javascript-client&sv=3.32.6&t=1778069555830&sid=fd65c74d-c589-4790-a1d3-04f53f50fe16&ec=106&gz=1. TypeError: Failed to fetch TypeError: Failed to fetch
+    at o (https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:59:3287)
+    at Kd (https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:5:117112)
+    at l (https://chatgpt.com/cdn/assets/3575f801-gcvigsw7hcc3z007.js:1:631)
+    at https://chatgpt.com/cdn/assets/4813494d-lrbbzpagu8bwtt0h.js:3:35920 @ https://chatgpt.com/cdn/assets/2340486e-rg57xung70zkn629.js:60

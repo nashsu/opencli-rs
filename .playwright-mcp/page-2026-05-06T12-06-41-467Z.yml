@@ -1,0 +1,209 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - generic [ref=e4]:
+    - generic:
+      - button [ref=e5] [cursor=pointer]:
+        - generic [ref=e7]: Skip to main content
+      - button [ref=e8] [cursor=pointer]
+    - generic [ref=e11]:
+      - banner [ref=e13]:
+        - generic [ref=e16]:
+          - button [ref=e17] [cursor=pointer]
+          - generic [ref=e20]:
+            - navigation [ref=e23]:
+              - list [ref=e24]:
+                - listitem [ref=e25]:
+                  - button "Home, 1 new notification" [ref=e26] [cursor=pointer]:
+                    - img [ref=e28]
+                    - generic [ref=e31]: Home
+                - listitem [ref=e32]:
+                  - link "My Network, 1 new notification" [ref=e33] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork
+                    - img [ref=e35]
+                    - generic [ref=e38]: My Network
+                - listitem [ref=e39]:
+                  - link "Jobs, 0 new notifications" [ref=e40] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/
+                    - img [ref=e42]
+                    - generic [ref=e45]: Jobs
+                - listitem [ref=e46]:
+                  - link "Messaging, 0 new notifications" [ref=e47] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/
+                    - img [ref=e49]
+                    - generic [ref=e52]: Messaging
+                - listitem [ref=e53]:
+                  - link "Notifications, 14 new notifications" [ref=e54] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/
+                    - img [ref=e56]
+                    - generic [ref=e59]: Notifications
+                - listitem [ref=e60]:
+                  - button "Me" [ref=e61] [cursor=pointer]:
+                    - figure [ref=e63]
+                    - generic [ref=e65]: Me
+            - navigation [ref=e69]:
+              - list [ref=e70]:
+                - listitem [ref=e71]:
+                  - button "For Business" [ref=e72] [cursor=pointer]:
+                    - img [ref=e74]
+                    - generic [ref=e77]: For Business
+                - listitem [ref=e79]:
+                  - link "Hire with AI" [ref=e80] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/talent/job-posting-redirect/?trk=nav_spotlight_post_job
+                    - generic [ref=e84]: Hire with AI
+      - main [ref=e85]:
+        - main [ref=e87]:
+          - generic [ref=e89]:
+            - generic [ref=e93]:
+              - generic [ref=e97]:
+                - link [ref=e98] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/in/hongyitu/
+                  - generic [ref=e99]:
+                    - figure [ref=e101]
+                    - figure [ref=e103]
+                - generic [ref=e104]:
+                  - link "Hongyi Tu, Student Bsc for Computer Science, London, England, Verified profile" [ref=e105] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/in/hongyitu/
+                    - generic "Hongyi Tu, Student Bsc for Computer Science, London, England, Verified profile" [ref=e106]:
+                      - paragraph [ref=e109]: Hongyi Tu
+                      - paragraph [ref=e112]: Student Bsc for Computer Science
+                      - paragraph [ref=e113]: London, England
+                  - link "China Telecom Europe" [ref=e114] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/in/hongyitu/
+                    - generic [ref=e115]:
+                      - figure [ref=e116]
+                      - paragraph [ref=e117]: China Telecom Europe
+              - link "Reach career heights with Premium" [ref=e122] [cursor=pointer]:
+                - /url: https://www.linkedin.com/premium/products/?upsellOrderOrigin=Tracking%3Av1%3Apremium_homepage_identity_upsell%3ANav%3AIn-Product&utype=job&referenceId=6wjZ4459Sjill%2FUr%2FFaDvQ%3D%3D&isSS=true&upsellSlotId=IDENTITY_MODULE
+                - paragraph [ref=e124]: Reach career heights with Premium
+              - menu [ref=e130]:
+                - link "Profile viewers 38" [ref=e132] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/me/profile-views/
+                  - generic "Profile viewers 38" [ref=e133]:
+                    - paragraph [ref=e135]: Profile viewers
+                    - paragraph [ref=e136]: "38"
+                - link "View all analytics 0" [ref=e138] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/analytics/creator/content/
+                  - generic "View all analytics 0" [ref=e139]:
+                    - paragraph [ref=e141]: View all analytics
+              - menu [ref=e144]:
+                - link "Saved items" [ref=e145] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/my-items/saved-posts/
+                  - paragraph [ref=e148]: Saved items
+                - link "Groups" [ref=e149] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/groups/
+                  - paragraph [ref=e152]: Groups
+                - link "Newsletters" [ref=e153] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/mynetwork/network-manager/newsletters/
+                  - paragraph [ref=e156]: Newsletters
+                - link "Events" [ref=e157] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/events/
+                  - paragraph [ref=e160]: Events
+            - list [ref=e162]:
+              - generic [ref=e164]:
+                - generic [ref=e165]:
+                  - link [ref=e166] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/in/hongyitu/
+                    - figure [ref=e167]
+                  - button "Start a post" [ref=e169] [cursor=pointer]:
+                    - generic "Start a post" [ref=e170]:
+                      - generic [ref=e172]:
+                        - paragraph [ref=e173]: Start a post
+                        - generic:
+                          - paragraph
+                - generic [ref=e174]:
+                  - button "Job" [ref=e175] [cursor=pointer]:
+                    - paragraph [ref=e178]: Job
+                  - button "Write article" [ref=e179] [cursor=pointer]:
+                    - paragraph [ref=e182]: Write article
+              - progressbar "In progress" [ref=e186]
+            - generic [ref=e188]:
+              - generic [ref=e191]:
+                - generic [ref=e193]:
+                  - generic [ref=e194]:
+                    - paragraph [ref=e195]: LinkedIn News
+                    - button "Info tooltip" [ref=e196] [cursor=pointer]
+                  - paragraph [ref=e199]: Top stories
+                  - generic [ref=e200]:
+                    - link [ref=e202] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/news/story/midsize-firms-to-grow-your-career-7245740/
+                    - link [ref=e205] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/news/story/ceo-pay-gap-with-workers-widens-8051801/
+                    - link [ref=e208] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/news/story/modern-slavery-at-record-levels-8800706/
+                    - link [ref=e211] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/news/story/how-ai-may-reshape-the-job-market-7252724/
+                    - link [ref=e214] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/news/story/inclusion-efforts-face-rising-pushback-8052505/
+                - generic [ref=e217]:
+                  - paragraph [ref=e218]: Today’s puzzles
+                  - generic [ref=e219]:
+                    - link "Play Patches" [ref=e221] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/games/patches/
+                      - generic "Play Patches" [ref=e222]:
+                        - generic [ref=e223]:
+                          - figure [ref=e224]
+                          - generic [ref=e225]:
+                            - paragraph [ref=e226]:
+                              - strong [ref=e227]: Patches
+                              - text: "#50"
+                            - paragraph [ref=e228]: Piece it together
+                    - link "Play Zip" [ref=e231] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/games/zip/
+                      - generic "Play Zip" [ref=e232]:
+                        - generic [ref=e233]:
+                          - figure [ref=e234]
+                          - generic [ref=e235]:
+                            - paragraph [ref=e236]:
+                              - strong [ref=e237]: Zip
+                              - text: "#415"
+                            - paragraph [ref=e238]: Complete the path
+                    - link "Play MiniSudoku" [ref=e241] [cursor=pointer]:
+                      - /url: /games/mini-sudoku/
+                      - generic "Play MiniSudoku" [ref=e242]:
+                        - generic [ref=e243]:
+                          - figure [ref=e244]
+                          - generic [ref=e245]:
+                            - paragraph [ref=e246]:
+                              - strong [ref=e247]: Mini Sudoku
+                              - text: "#268"
+                            - paragraph [ref=e248]: The classic game, made mini
+                    - link "Play Tango" [ref=e251] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/games/tango/
+                      - generic "Play Tango" [ref=e252]:
+                        - generic [ref=e253]:
+                          - figure [ref=e254]
+                          - generic [ref=e255]:
+                            - paragraph [ref=e256]:
+                              - strong [ref=e257]: Tango
+                              - text: "#576"
+                            - paragraph [ref=e258]: Harmonize the grid
+              - generic [ref=e261]:
+                - iframe [ref=e264]
+                - generic [ref=e265]:
+                  - generic [ref=e266]:
+                    - link "About" [ref=e267] [cursor=pointer]:
+                      - /url: https://about.linkedin.com/
+                      - paragraph [ref=e268]: About
+                    - link "Accessibility" [ref=e269] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/accessibility/
+                      - paragraph [ref=e270]: Accessibility
+                    - link "Help Center" [ref=e271] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/
+                      - paragraph [ref=e272]: Help Center
+                    - button "Privacy & Terms" [ref=e273] [cursor=pointer]:
+                      - paragraph [ref=e275]: Privacy & Terms
+                    - link "Ad Choices" [ref=e277] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/answer/62931/
+                      - paragraph [ref=e278]: Ad Choices
+                    - link "Advertising" [ref=e279] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
+                      - paragraph [ref=e280]: Advertising
+                    - button "Business Services" [ref=e281] [cursor=pointer]:
+                      - paragraph [ref=e283]: Business Services
+                    - link "Get the LinkedIn app" [ref=e285] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/mobile/
+                      - paragraph [ref=e286]: Get the LinkedIn app
+                    - link "More" [ref=e287] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/
+                      - paragraph [ref=e288]: More
+                  - paragraph [ref=e291]: LinkedIn Corporation © 2026

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Sync AutoCLI job JSON into Supabase with optional priority scoring."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +12,14 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import urlparse, urlunparse
+
+# Ensure project root is on sys.path for `scripts.*` imports when invoked as
+#   python scripts/sync_autocli_jobs.py
+_project_root = str(pathlib.Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from scripts.job_priority_scorer import score_job
 
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -245,7 +254,7 @@ def normalize_job(source: str, raw_record: dict[str, Any]) -> NormalizedJob | No
     location = _get_first_key(raw_record, ("location",))
     salary = _get_first_key(raw_record, ("salary", "salary_range", "salaryRange"))
     post_time = _get_first_key(raw_record, ("post_time", "postTime", "posted_date", "postedDate"))
-    job_description = _get_first_key(raw_record, ("job_description", "jobDescription", "description"))
+    job_description = _get_first_key(raw_record, ("job_description", "jobDescription", "description", "jd"))
 
     # Use canonical URL for identity, not raw apply_url (which may be a LinkedIn referrer)
     canonical_url = _extract_canonical_job_url(apply_url, external_url)
@@ -314,7 +323,14 @@ def _create_supabase_client(url: str | None, key: str | None):
     return create_client(url, key)
 
 
-def upsert_job(client, job: NormalizedJob) -> str:
+def upsert_job(
+    client,
+    job: NormalizedJob,
+    priority_score: float | None = None,
+    priority_tier: str | None = None,
+    priority_scorer_version: str | None = None,
+    priority_signals: dict | None = None,
+) -> str:
     params: dict[str, Any] = {
         "p_source": job.source,
         "p_identity_hash": job.identity_hash,
@@ -337,6 +353,14 @@ def upsert_job(client, job: NormalizedJob) -> str:
         params["p_source_channel"] = job.source_channel
     if job.apply_type:
         params["p_apply_type"] = job.apply_type
+    if priority_score is not None:
+        params["p_priority_score"] = priority_score
+    if priority_tier is not None:
+        params["p_priority_tier"] = priority_tier
+    if priority_scorer_version is not None:
+        params["p_priority_scorer_version"] = priority_scorer_version
+    if priority_signals is not None:
+        params["p_priority_signals"] = priority_signals
     resp = client.rpc("upsert_job", params).execute()
     # supabase-py returns either scalar or list depending on RPC return shape; normalize.
     data = resp.data
@@ -361,6 +385,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--env-file",
         help="Optional path to a .env file to load (does not override existing env vars).",
+    )
+    parser.add_argument(
+        "--disable-scoring",
+        action="store_true",
+        help="Skip priority scoring (useful for testing or backfill via separate script).",
+    )
+    parser.add_argument(
+        "--min-priority-score",
+        type=float,
+        default=None,
+        help="Only upsert jobs with priority_score >= this value (default: upsert all).",
+    )
+    parser.add_argument(
+        "--priority-tier",
+        choices=["high", "medium", "low", "reject"],
+        default=None,
+        help="Only upsert jobs with this priority_tier or above (default: upsert all).",
     )
     args = parser.parse_args(argv)
 
@@ -390,6 +431,7 @@ def main(argv: list[str] | None = None) -> int:
         records = records[: args.limit]
 
     normalized: list[NormalizedJob] = []
+    scored: list[tuple[NormalizedJob, dict[str, Any] | None]] = []
     skipped = 0
     for idx, rec in enumerate(records):
         job = normalize_job(args.source, rec)
@@ -401,9 +443,34 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
         normalized.append(job)
+        score_result = None
+        if not args.disable_scoring:
+            try:
+                # Build a dict with normalized keys so score_job can find
+                # job_title, company_name, job_description, post_time, etc.
+                # even when the raw record uses different key names.
+                score_result = score_job({
+                    "job_title": job.job_title,
+                    "company_name": job.company_name,
+                    "location": job.location,
+                    "salary": job.salary,
+                    "post_time": job.post_time,
+                    "apply_url": job.apply_url,
+                    "external_url": job.external_url,
+                    "job_description": job.job_description,
+                    "apply_type": job.apply_type,
+                    "source_channel": job.source_channel,
+                    "workplace_type": _get_first_key(
+                        job.raw_record, ("workplace_type",)
+                    ),
+                    "raw_record": job.raw_record,
+                })
+            except Exception:
+                # Scoring is non-critical -- log and continue without it
+                pass
+        scored.append((job, score_result))
 
     if args.dry_run:
-        # Group by canonical_job_url to find duplicates
         from collections import defaultdict
 
         url_groups: dict[str, list[NormalizedJob]] = defaultdict(list)
@@ -431,7 +498,74 @@ def main(argv: list[str] | None = None) -> int:
             "skipped": skipped,
             "canonical_distinct_jobs": len(url_groups),
             "duplicate_groups": len(duplicate_groups),
+            "scoring": not args.disable_scoring,
         }
+        if not args.disable_scoring:
+            scored_results = [
+                r for _, r in scored if r is not None
+            ]
+            if scored_results:
+                scores = [r.score for r in scored_results]
+                tiers = [r.tier for r in scored_results]
+                report["priority_scores"] = {
+                    "min": round(min(scores), 1),
+                    "max": round(max(scores), 1),
+                    "avg": round(sum(scores) / len(scores), 1),
+                    "total_scored": len(scored_results),
+                }
+                tier_counts: dict[str, int] = {}
+                for t in tiers:
+                    tier_counts[t] = tier_counts.get(t, 0) + 1
+                report["priority_tiers"] = tier_counts
+                report["low_priority_count"] = tier_counts.get("reject", 0)
+
+                # Top 10 priority jobs
+                sorted_with_job = sorted(
+                    [(j, r) for j, r in scored if r is not None],
+                    key=lambda x: x[1].score,
+                    reverse=True,
+                )
+                top_10 = []
+                for nj, sr in sorted_with_job[:10]:
+                    sig = sr.signals
+                    top_10.append({
+                        "title": nj.job_title,
+                        "company": nj.company_name,
+                        "location": nj.location,
+                        "score": sr.score,
+                        "tier": sr.tier,
+                        "key_signals": {
+                            "compensation": sig.get("compensation", {}).get("score"),
+                            "role_fit": sig.get("role_fit", {}).get("score"),
+                            "application_path": sig.get("application_friction", {}).get("reason"),
+                            "source_quality": sig.get("source_quality", {}).get("score"),
+                        },
+                    })
+                report["top_priority_jobs"] = top_10
+
+                # Source-quality summary
+                recruiter_like = 0
+                aggregator_like = 0
+                low_info_easy_apply = 0
+                raw_jd_fallback = 0
+                for r in scored_results:
+                    sq = r.signals.get("source_quality", {})
+                    if sq.get("recruiter_company") or sq.get("recruiter_phrase"):
+                        recruiter_like += 1
+                    ap = r.signals.get("application_path", {})
+                    if ap.get("is_aggregator"):
+                        aggregator_like += 1
+                    if sq.get("easy_apply_no_owned_url") and sq.get("missing_salary"):
+                        low_info_easy_apply += 1
+                    dq = r.signals.get("data_quality", {})
+                    if dq.get("description_source") in ("raw", "raw_record.jd"):
+                        raw_jd_fallback += 1
+                report["source_quality_summary"] = {
+                    "recruiter_like_rows": recruiter_like,
+                    "aggregator_like_rows": aggregator_like,
+                    "low_information_easy_apply_rows": low_info_easy_apply,
+                    "raw_jd_fallback_rows": raw_jd_fallback,
+                }
         if duplicate_groups:
             report["duplicates"] = duplicate_groups
 
@@ -444,10 +578,34 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
+    # ── Priority filtering ──────────────────────────────────────────────
+    _TIER_ORDER = {"reject": 1, "low": 2, "medium": 3, "high": 4}
+
+    def _passes_filter(score_result) -> bool:
+        if score_result is None:
+            return args.min_priority_score is None and args.priority_tier is None
+        if args.min_priority_score is not None and score_result.score < args.min_priority_score:
+            return False
+        if args.priority_tier is not None:
+            return _TIER_ORDER.get(score_result.tier, 0) >= _TIER_ORDER[args.priority_tier]
+        return True
+
     upserted = 0
-    for idx, job in enumerate(normalized):
+    for idx, (job, score_result) in enumerate(scored):
+        if not _passes_filter(score_result):
+            continue
         try:
-            _ = upsert_job(client, job)
+            if score_result is not None:
+                _ = upsert_job(
+                    client,
+                    job,
+                    priority_score=score_result.score,
+                    priority_tier=score_result.tier,
+                    priority_scorer_version=score_result.version,
+                    priority_signals=score_result.signals,
+                )
+            else:
+                _ = upsert_job(client, job)
             upserted += 1
         except Exception as exc:
             print(
@@ -456,12 +614,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    scored_count = sum(1 for _, r in scored if r is not None)
     print(
         json.dumps(
             {
                 "source": args.source,
                 "input_rows": len(records),
                 "upserted": upserted,
+                "scored": scored_count,
                 "skipped": skipped,
             },
             indent=2,
