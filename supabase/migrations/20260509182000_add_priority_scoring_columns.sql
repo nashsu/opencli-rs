@@ -6,17 +6,19 @@
 
 -- 1. Add columns to jobs.jobs
 alter table jobs.jobs
-add column if not exists priority_score numeric(5,1);
+add column if not exists priority_score numeric(5,1) not null default 0;
 
 alter table jobs.jobs
-add column if not exists priority_tier text;
+add column if not exists priority_tier text not null default 'unknown';
 
 alter table jobs.jobs
-add column if not exists priority_scorer_version text;
+add column if not exists priority_scorer_version text not null default 'job-priority-v1';
 
 alter table jobs.jobs
-add column if not exists priority_signals jsonb;
+add column if not exists priority_signals jsonb not null default '{}'::jsonb;
 
+-- priority_scored_at is intentionally nullable: indicates *when* scoring happened,
+-- NULL means the row has never been scored (e.g. before backfill)
 alter table jobs.jobs
 add column if not exists priority_scored_at timestamptz;
 
@@ -108,10 +110,10 @@ begin
     nullif(p_url_hash, ''),
     nullif(p_source_channel, ''),
     nullif(p_apply_type, ''),
-    case when p_priority_score is not null then p_priority_score else null end,
-    nullif(p_priority_tier, ''),
-    nullif(p_priority_scorer_version, ''),
-    p_priority_signals,
+    case when p_priority_score is not null then p_priority_score else 0 end,
+    coalesce(nullif(p_priority_tier, ''), 'unknown'),
+    coalesce(nullif(p_priority_scorer_version, ''), 'job-priority-v1'),
+    coalesce(p_priority_signals, '{}'::jsonb),
     now(),
     now(),
     1,

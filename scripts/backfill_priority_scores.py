@@ -138,13 +138,13 @@ def main(argv: list[str] | None = None) -> int:
         "job_title, company_name, location, salary, post_time, "
         "apply_url, external_url, job_description, "
         "apply_type, source_channel, "
-        "priority_score, priority_version"
+        "priority_score, priority_scorer_version"
     )
 
     if not args.force:
         # Only rows that have never been scored or whose version is stale
         query = query.or_(
-            f"priority_score.is.null,priority_version.neq.{SCORER_VERSION}"
+            f"priority_score.is.null,priority_scorer_version.neq.{SCORER_VERSION}"
         )
     else:
         # Re-score everything (order so newer-first is optional but nice)

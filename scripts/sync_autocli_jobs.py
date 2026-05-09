@@ -254,7 +254,7 @@ def normalize_job(source: str, raw_record: dict[str, Any]) -> NormalizedJob | No
     location = _get_first_key(raw_record, ("location",))
     salary = _get_first_key(raw_record, ("salary", "salary_range", "salaryRange"))
     post_time = _get_first_key(raw_record, ("post_time", "postTime", "posted_date", "postedDate"))
-    job_description = _get_first_key(raw_record, ("job_description", "jobDescription", "description"))
+    job_description = _get_first_key(raw_record, ("job_description", "jobDescription", "description", "jd"))
 
     # Use canonical URL for identity, not raw apply_url (which may be a LinkedIn referrer)
     canonical_url = _extract_canonical_job_url(apply_url, external_url)

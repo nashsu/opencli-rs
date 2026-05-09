@@ -770,13 +770,22 @@ def score_data_completeness(
     if raw_record is None:
         raw_record = {}
 
+    # Resolve JD text for length check (fallback to raw_record JD fields)
+    jd_len_text = job_description.strip()
+    if not jd_len_text:
+        for key in ("jd", "description", "jobDescription"):
+            val = (raw_record or {}).get(key)
+            if val and isinstance(val, str) and val.strip():
+                jd_len_text = val.strip()
+                break
+
     checks: list[tuple[str, bool]] = [
         ("has_title", bool(job_title.strip())),
         ("has_company", bool(company_name.strip())),
         ("has_location", bool(location.strip())),
         ("has_jd_normalized", bool(job_description.strip())),
         ("has_jd_raw", _has_raw_jd(raw_record)),
-        ("has_jd_length_500", len(job_description.strip()) >= MIN_JD_LENGTH_USABLE),
+        ("has_jd_length_500", len(jd_len_text) >= MIN_JD_LENGTH_USABLE),
         ("has_salary", bool(salary.strip())),
         ("has_posted_date", bool(posted_time.strip())),
         ("has_application_url", bool(apply_url.strip() or external_url.strip())),
@@ -916,9 +925,13 @@ def _is_aggregator_source(scoring_text: str) -> bool:
 
 
 def apply_penalties(
-    score: float, signals: dict, job_data: dict
+    score: float, signals: dict, job_data: dict, scoring_text: str = ""
 ) -> tuple[float, list[str]]:
     """Subtract penalties from *score* after component scoring.
+
+    *scoring_text* is the pre-normalised JD text (already resolved via
+    extract_job_description).  When empty, falls back to
+    job_data["job_description"] for backward compatibility with direct calls.
 
     Returns (penalized_score, applied_penalties_list).
     """
@@ -931,8 +944,8 @@ def apply_penalties(
     apply_url = str(job_data.get("apply_url", "") or "")
     external_url = str(job_data.get("external_url", "") or "")
     apply_type = str(job_data.get("apply_type", "") or "").lower()
-    scoring_text = signals.get("noise", {}).get("clean_length", 0) > 0 or ""
-    scoring_text = str(job_data.get("job_description", "") or "")
+    if not scoring_text:
+        scoring_text = str(job_data.get("job_description", "") or "")
 
     # 1. SCAM_PENALTY (-20)
     if _SCAM_RE.search(scoring_text):
@@ -1168,7 +1181,7 @@ def score_job(
     }
 
     # -- Penalties --
-    penalised_score, penalties = apply_penalties(raw_total, combined_signals, job_data)
+    penalised_score, penalties = apply_penalties(raw_total, combined_signals, job_data, scoring_text)
     combined_signals["penalties"] = penalties
 
     # -- Clamp to 0..100 --

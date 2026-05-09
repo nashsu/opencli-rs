@@ -12,3 +12,8 @@ CHANGELOG.md
 
 # Python
 __pycache__/
+
+# macOS + local tooling noise
+.DS_Store
+.playwright-mcp/
+.serena/
