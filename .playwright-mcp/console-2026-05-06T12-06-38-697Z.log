@@ -1,9 +1,0 @@
-[ -463162ms] [WARNING] The resource https://www.deepseek.com/_next/static/css/270a1be4b9ded1fd.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://www.deepseek.com/:0
-[ -466558ms] [INFO] %c[__pageVisit]:%c 访问页面 [/] [0]：397ms color: blue;  Object  @ https://www.deepseek.com/_next/static/chunks/2278-4469e39fec2e81cf.js:0
-[ -466557ms] [INFO] %c[__tti]:%c / TTI 上报：398ms color: blue;  Object  @ https://www.deepseek.com/_next/static/chunks/2278-4469e39fec2e81cf.js:0
-[ -466557ms] [LOG] 1778015183896 @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/sharebx.js:7
-[ -466556ms] [LOG] 1778015183896 @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/sharebx.js:19
-[ -466528ms] [LOG] cssjs @ chrome-extension://nfmlkliedggdodlbgghmmchhgckjoaml/css.js:329
-[ -465070ms] [INFO] %c[__pageVisibilityChange]:%c 页面隐藏 color: blue;  Object  @ https://www.deepseek.com/_next/static/chunks/2278-4469e39fec2e81cf.js:0
-[    -957ms] [INFO] %c[__pageVisibilityChange]:%c 页面显示 color: blue;  {payload: Object}  @ https://www.deepseek.com/_next/static/chunks/2278-4469e39fec2e81cf.js:0
-[  131794ms] [INFO] %c[__pageVisibilityChange]:%c 页面隐藏 color: blue;  {payload: Object}  @ https://www.deepseek.com/_next/static/chunks/2278-4469e39fec2e81cf.js:0
