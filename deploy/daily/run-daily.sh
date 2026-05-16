@@ -43,8 +43,13 @@ run_once() {
     source /run/cdp-endpoint.env
     set +a
 
+    # `9>&-` closes FD 9 (our flock holder) on the autocli child. Without this,
+    # bash's lock FD inherits into autocli; if autocli ever spawns a
+    # `autocli --daemon` (the daemon-path fallback), that daemon will hold the
+    # lock for its entire lifetime — making is_running() permanently True
+    # even after run-daily.sh exits. We hit this exact bug in production.
     local out="${OUTPUT_DIR}/${DATE_STAMP}.json"
-    if ! /app/bin/autocli linkedin recommended --limit 0 --with_jd true -f json > "${out}" 2>>"${LOG_FILE}"; then
+    if ! /app/bin/autocli linkedin recommended --limit 0 --with_jd true -f json > "${out}" 2>>"${LOG_FILE}" 9>&-; then
         echo "[run-daily] autocli failed" >>"${LOG_FILE}"
         return 2
     fi
@@ -52,8 +57,10 @@ run_once() {
     # Sync to Supabase. Capture stdout to its own file so we can parse the
     # summary JSON directly (sync_autocli_jobs.py pretty-prints with indent=2,
     # which breaks grep+tail line-based parsing).
+    # Same `9>&-` lock-close discipline (any of sync's children inheriting the
+    # lock would also pin is_running()).
     local sync_out="/tmp/sync-${DATE_STAMP}-${attempt}.json"
-    if ! uv --project /app/api run --no-project -- python /app/scripts/sync_autocli_jobs.py --input "${out}" > "${sync_out}" 2>>"${LOG_FILE}"; then
+    if ! uv --project /app/api run --no-project -- python /app/scripts/sync_autocli_jobs.py --input "${out}" > "${sync_out}" 2>>"${LOG_FILE}" 9>&-; then
         echo "[run-daily] sync_autocli_jobs.py failed (see ${sync_out})" >>"${LOG_FILE}"
         cat "${sync_out}" >>"${LOG_FILE}" 2>/dev/null || true
         return 3
