@@ -49,23 +49,27 @@ run_once() {
         return 2
     fi
 
-    # Sync to Supabase
-    if ! uv --project /app/api run --no-project -- python /app/scripts/sync_autocli_jobs.py --input "${out}" >>"${LOG_FILE}" 2>&1; then
-        echo "[run-daily] sync_autocli_jobs.py failed" >>"${LOG_FILE}"
+    # Sync to Supabase. Capture stdout to its own file so we can parse the
+    # summary JSON directly (sync_autocli_jobs.py pretty-prints with indent=2,
+    # which breaks grep+tail line-based parsing).
+    local sync_out="/tmp/sync-${DATE_STAMP}-${attempt}.json"
+    if ! uv --project /app/api run --no-project -- python /app/scripts/sync_autocli_jobs.py --input "${out}" > "${sync_out}" 2>>"${LOG_FILE}"; then
+        echo "[run-daily] sync_autocli_jobs.py failed (see ${sync_out})" >>"${LOG_FILE}"
+        cat "${sync_out}" >>"${LOG_FILE}" 2>/dev/null || true
         return 3
     fi
+    cat "${sync_out}" >>"${LOG_FILE}"
 
     local ended_at
     ended_at=$(date +%s)
     local duration=$(( ended_at - started_at ))
 
-    # Parse counts from the last JSON line printed by sync_autocli_jobs.py
-    local summary
-    summary=$(grep -E '^\{' "${LOG_FILE}" | tail -1 || echo "{}")
+    # Parse counts from the captured sync output (a complete JSON document).
     local upserted scraped skipped
-    upserted=$(jq -r '.upserted // 0' <<<"${summary}")
-    scraped=$(jq -r '.input_rows // 0' <<<"${summary}")
-    skipped=$(jq -r '.skipped // 0' <<<"${summary}")
+    upserted=$(jq -r '.upserted // 0' "${sync_out}" 2>/dev/null || echo 0)
+    scraped=$(jq -r '.input_rows // 0' "${sync_out}" 2>/dev/null || echo 0)
+    skipped=$(jq -r '.skipped // 0' "${sync_out}" 2>/dev/null || echo 0)
+    rm -f "${sync_out}"
 
     jq -n \
         --argjson last_run_unixts "${started_at}" \
