@@ -56,7 +56,7 @@ services:
     labels: *watchtower-enable
 
   cloudflared:
-    image: cloudflare/cloudflared:2025.4.0
+    image: cloudflare/cloudflared:2026.3.0
     container_name: autocli-cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
