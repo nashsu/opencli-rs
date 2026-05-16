@@ -1,0 +1,6 @@
+# supercronic crontab — runs in container TZ=Europe/London.
+# Daily LinkedIn pull
+0 3 * * * /app/run-daily.sh
+
+# Output retention: delete files older than ${OUTPUT_RETENTION_DAYS:-30} days
+0 4 * * * find /data/output -name "*.json" -type f -mtime +30 -delete
