@@ -1,0 +1,23 @@
+[project]
+name = "autocli-daily-api"
+version = "0.1.0"
+description = "FastAPI control plane for the autocli-daily microservice"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<0.116",
+    "uvicorn[standard]>=0.32,<0.33",
+    "httpx>=0.28,<0.29",
+    "supabase>=2.8,<3.0",
+    "prometheus-client>=0.21,<0.22",
+    "python-multipart>=0.0.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<1",
+    "respx>=0.21,<1",
+]
+
+[tool.uv]
+package = false
