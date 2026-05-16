@@ -480,7 +480,9 @@ Each phase is a hard gate. Implementation moves to the next only after all check
 
 ### Phase 0 — Local image build (context = repo root, matches CI)
 
-The operator's Mac is arm64-darwin; the production image runs linux/amd64. A `cargo build` on the host would produce a Mach-O binary that can't run inside a Linux container. The binary must therefore be built **inside a Docker rust container** that runs as `linux/amd64`:
+The operator's Mac is arm64-darwin; the production image runs linux/amd64. A `cargo build` on the host would produce a Mach-O binary that can't run inside a Linux container. The binary must therefore be built **inside a Docker rust container** that runs as `linux/amd64`.
+
+> **Toolchain pin.** `rust:1.94-slim-bookworm` matches the operator's local `rustc 1.94.1` (verified 2026-05-16) so Phase 0 / CI / dev agree byte-for-byte. The long-term hardening is to add a tracked `rust-toolchain.toml` at repo root (single source of truth for all three environments); until that PR lands, the pin is duplicated here and in the GitHub Actions workflow.
 
 ```bash
 cd /Users/sanchezrick/Documents/Github/AutoCLI-daily    # the worktree, NOT deploy/
@@ -492,7 +494,7 @@ docker run --rm --platform linux/amd64 \
   -v "$PWD":/work -w /work \
   -v autocli-daily-cargo-cache:/usr/local/cargo/registry \
   -v autocli-daily-cargo-target:/work/target \
-  rust:1.81-slim-bookworm \
+  rust:1.94-slim-bookworm \
   bash -c "cargo build --release -p autocli && cp target/release/autocli deploy/daily/bin/autocli"
 chmod +x deploy/daily/bin/autocli
 file deploy/daily/bin/autocli    # MUST say "ELF 64-bit LSB executable, x86-64" — not "Mach-O"
