@@ -126,7 +126,7 @@ AutoCLI/
     │   ├── run-daily.sh                   ← orchestrator (flock + retry + log)
     │   └── api/
     │       ├── pyproject.toml             ← uv-managed (fastapi, supabase, prometheus-client)
-    │       ├── main.py                    ← FastAPI: /run /status /logs /jobs /metrics
+    │       ├── main.py                    ← FastAPI routes: /api/{status,run,logs,metrics,health} + /jobs
     │       └── trigger.py                 ← shared run-daily executor used by cron + /run
     ├── prometheus/
     │   └── prometheus.yml                 ← single scrape job
@@ -289,13 +289,16 @@ If either pull fails with 401/403 (e.g. PAT expired): `echo $GHCR_PAT | docker l
 ```
 PID 1 : tini
   ├─ /app/cdp-discover.sh                    (runs once at boot, blocks until chrome ready)
-  │     reads http://autocli-chrome:9222/json/list  (creates a tab via /json/new if empty)
-  │     extracts webSocketDebuggerUrl, rewrites host (localhost → autocli-chrome:9222)
-  │     writes the resulting ws:// URL to /run/cdp-endpoint.env  →  AUTOCLI_CDP_ENDPOINT
+  │     GET  http://autocli-chrome:9222/json/list
+  │     if no type:"page" target →  PUT http://autocli-chrome:9222/json/new?about:blank
+  │     extract webSocketDebuggerUrl, rewrite host (localhost:9223 → autocli-chrome:9222)
+  │     write the resulting ws:// URL to /run/cdp-endpoint.env  →  AUTOCLI_CDP_ENDPOINT
+  │     (boot run gates supercronic + uvicorn startup; see §5.2)
   │
-  ├─ supercronic /etc/cron.d/autocli         (TZ=Europe/London; starts only after cdp-discover.sh exits 0)
+  ├─ supercronic /etc/cron.d/autocli         (TZ=Europe/London; starts only after the boot cdp-discover.sh exits 0)
   │     └─ "0 3 * * * /app/run-daily.sh"
-  │           └─ source /run/cdp-endpoint.env    # rediscover if Chrome restarted
+  │           └─ /app/cdp-discover.sh                  # re-discover every run — Chrome may have restarted, page id may have changed
+  │           └─ source /run/cdp-endpoint.env          # pick up the fresh AUTOCLI_CDP_ENDPOINT
   │           └─ /app/bin/autocli linkedin recommended --limit 0 --with_jd true -f json
   │              > /data/output/$(date +%Y%m%d).json
   │           └─ uv run /app/scripts/sync_autocli_jobs.py --input /data/output/...
@@ -322,7 +325,8 @@ PID 1 : tini
 
 - **CDP page target, not browser endpoint**: `/json/version` returns a browser-level WebSocket that does not accept page-scoped commands. `cdp-discover.sh` therefore hits `GET /json/list`, picks the first `type:"page"` target, and if none exists `PUT /json/new?about:blank` to create one. (Chrome ≥ M86 rejects `GET` and `POST` on `/json/new` with `405 Method Not Allowed`; `PUT` is the only supported verb.) Only `webSocketDebuggerUrl` from that page target is exported as `AUTOCLI_CDP_ENDPOINT`.
 - **Host rewrite**: the Stagehand image binds Chromium to `127.0.0.1:9223` (socat exposes 9222 publicly), so `/json/list` returns URLs like `ws://localhost:9223/devtools/page/<id>`. `cdp-discover.sh` rewrites the host:port portion to `autocli-chrome:9222` (the docker-service-name + the externally-mapped port) before exporting. Confirmed against `~/Documents/Github/my-stagehand-app/scripts/entrypoint-vnc.sh`.
-- **Boot ordering**: `entrypoint.sh` runs `cdp-discover.sh` synchronously first (retry every 2 s, give up at 60 s and exit non-zero). `restart: unless-stopped` on the `autocli-daily` service then makes docker recreate the container until Chrome is reachable. Only after that does supercronic launch and uvicorn bind `:8080`.
+- **Discovery cadence**: `cdp-discover.sh` runs at TWO points — (1) at container boot, gating supercronic and uvicorn startup; (2) at the start of every `run-daily.sh` invocation (cron-driven AND `POST /api/run`-driven), before `AUTOCLI_CDP_ENDPOINT` is sourced. The per-run discovery refreshes the page id in case Chrome restarted or the page was closed between cron ticks. Boot retry: every 2 s, give up at 60 s with exit ≠ 0; `restart: unless-stopped` then recreates the container until Chrome is reachable. Per-run discovery uses the same retry budget but counts as a transient failure under §5.2 unified retry if it gives up.
+- **Boot ordering**: `entrypoint.sh` runs the boot-time `cdp-discover.sh` synchronously first; only after it exits 0 does supercronic launch and uvicorn bind `:8080`.
 - **Mutual exclusion**: `run-daily.sh` wraps the body in `flock -n /var/lock/autocli-daily.lock` — cron and `/api/run` cannot collide.
 - **Retry policy (unified)**: a single backoff schedule applies to every transient failure (autocli exit ≠ 0, Supabase 429/5xx, CDP disconnect). Three attempts at **15 s → 60 s → 240 s**. On the 4th failure: record `last_exit_code` in `last_run.json`, increment `autocli_daily_runs_total{result="failure"}`, release the lock, log to `/data/logs/run-<date>.log`. The next cron tick is the next retry opportunity. This single policy is referenced from runbook, code, metrics, and Phase-7 failure table — all kept in sync.
 - **Output retention**: JSON files kept 30 days; a daily 04:00 cron entry runs `find /data/output -mtime +30 -delete`.
@@ -355,7 +359,7 @@ In token mode **ingress rules live in the Cloudflare dashboard**, not in a local
 | `api.autocli.<your-zone>` | `http://autocli-daily:8080` | FastAPI: `/api/*` (status, run, logs, metrics, health) AND `/jobs` (Supabase read proxy) |
 | `grafana.autocli.<your-zone>` | `http://grafana:3000` | Subdomain → no `serve_from_sub_path` needed |
 
-These five hostnames are configured in the dashboard under the same Tunnel. Implementation produces a screenshot/checklist for the operator to apply.
+These four hostnames are configured in the dashboard under the same Tunnel. Implementation produces a screenshot/checklist for the operator to apply.
 
 **Cloudflare Access — one Application per subdomain, two policies inside each.** Within a single Application multiple policies are evaluated as **OR** — a request matching any one policy is admitted. This lets us serve both humans and scripts on the same surface:
 
@@ -426,7 +430,7 @@ Dashboard JSON and the datasource pointer are committed under `grafana/provision
 | `SUPABASE_URL` | `autocli-daily` | Operator's `.env` | Same name `scripts/sync_autocli_jobs.py` already reads |
 | `SUPABASE_SERVICE_ROLE_KEY` | `autocli-daily` | Operator's `.env` | Matches the script's actual env-var name (or `SUPABASE_KEY` fallback). Never reaches chrome/cloudflared. |
 | `SUPABASE_ANON_KEY` | `autocli-daily` | Operator's `.env` | Used by `/jobs` read-only path |
-| `API_RUN_TOKEN` | `autocli-daily` | Generated at deploy (`openssl rand -hex 32`) | **Enforced** by FastAPI: `POST /api/run` and `GET /api/logs` require `Authorization: Bearer ${API_RUN_TOKEN}`; missing/wrong → 401. Defense-in-depth in case Cloudflare Access ever fails open. |
+| `API_RUN_TOKEN` | `autocli-daily` | Generated at deploy (`openssl rand -hex 32`) | **Enforced** by FastAPI: `GET /api/status`, `POST /api/run`, `GET /api/logs`, AND `GET /jobs` all require `Authorization: Bearer ${API_RUN_TOKEN}`; missing/wrong → 401. (`/api/health` and `/api/metrics` are intentionally open — see §5.1 route table.) Defense-in-depth in case Cloudflare Access ever fails open. |
 | `VNC_PASSWORD` | `autocli-chrome` | Generated at deploy (`openssl rand -base64 18`) | **Never** uses the local-dev default `stagehand` in prod; the operator gets the generated value once and stores it (1Password / similar). |
 | `GF_SECURITY_ADMIN_PASSWORD` | `grafana` | Generated at deploy | Bootstrap admin |
 | `TZ` | all | `Europe/London` | |
@@ -494,9 +498,21 @@ curl -s -H "Authorization: Bearer $LOCAL_TOKEN" \
 ✅ JSON written to `data/output/`; Supabase `jobs.jobs` has new rows; `/api/status` (with Bearer) shows `last_exit_code:0`.
 
 ### Phase 2 — CI green & images on GHCR
-Push branch → workflow finishes → both tags visible:
+
+Tag expectations depend on the branch being pushed (matches §4.1 workflow):
+
+**Pushing `feat/daily-microservice`** (this design's working branch) — expect:
+- `ghcr.io/ricksanchez88e/autocli-chrome:branch-feat-daily-microservice`
+- `ghcr.io/ricksanchez88e/autocli-chrome:sha-<short>`
+- `ghcr.io/ricksanchez88e/autocli-daily:branch-feat-daily-microservice`
+- `ghcr.io/ricksanchez88e/autocli-daily:sha-<short>`
+- **No `:main` tag** (would be a bug — Watchtower in prod tracks `:main`)
+
+**After merge to `main`** — expect (in addition to the existing sha tags):
 - `ghcr.io/ricksanchez88e/autocli-chrome:main`
 - `ghcr.io/ricksanchez88e/autocli-daily:main`
+
+Phase 3 server bring-up reads `:main` and therefore only runs after merge (or as a deliberate one-off pull of `:branch-*` for early staging).
 
 ### Phase 3 — Server bring-up (executed by the implementing agent)
 ```bash
@@ -625,7 +641,7 @@ Two days, no manual intervention, `last_run_unixts` advances daily, no failed ru
 
 ## 9. Risks & Open Items
 
-1. **CDP public exposure.** Cloudflare Access *must* be configured before bringing Phase 4 traffic up. The implementation will refuse to add the `cdp.autocli.<your-zone>` hostname to the Cloudflare Tunnel dashboard until all probes in §7 Phase 4 step 1+2 succeed for the other four subdomains AND the operator has confirmed the Access Application with the Service-Token-bound-to-account + IP-range policy is published.
+1. **CDP public exposure.** Cloudflare Access *must* be configured before bringing the CDP surface up. The implementation will refuse to add the `cdp.autocli.<your-zone>` hostname to the Cloudflare Tunnel dashboard until every probe in §7 **Phase 4a** passes for the other three subdomains (`vnc`, `api`, `grafana`) AND the operator has confirmed the Access Application for `cdp.autocli` exists with the Service-Token-bound-to-account + IP-range policy plus an operator-email + WARP policy. Only then does **Phase 4b** add the ingress, followed by **Phase 4c** probes.
 2. **LinkedIn cookie lifetime.** Empirically 30-90 days. When it expires, `last_exit_code` becomes non-zero with a recognisable error string. Operator action: open `/vnc/` → re-login. No code change needed.
 3. **Skyvern decommission.** The operator authorised stopping `skyvern-skyvern-{1,ui-1}`. Their data volumes are not deleted by this design — only the running containers. Skyvern can be re-enabled later by `docker compose up` from its own compose file if needed.
 4. **`<your-zone>`.** Spec leaves the apex hostname as a placeholder; the operator must provide it (and verify it is a Cloudflare-managed zone) before Phase 3. The 4 subdomains are `{vnc,cdp,api,grafana}.autocli.<your-zone>`. `/jobs` rides on `api.autocli`, not its own subdomain.
