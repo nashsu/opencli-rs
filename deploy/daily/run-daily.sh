@@ -34,8 +34,14 @@ run_once() {
         echo "[run-daily] cdp-discover failed" >>"${LOG_FILE}"
         return 1
     fi
+    # Source AND export — bare `source key=value` only sets a shell var, NOT an
+    # environment variable, so the autocli child process would not see
+    # AUTOCLI_CDP_ENDPOINT and would fall back to the daemon path
+    # ("Chrome is not running"). `set -a` makes any assignment auto-export.
+    set -a
     # shellcheck disable=SC1091
     source /run/cdp-endpoint.env
+    set +a
 
     local out="${OUTPUT_DIR}/${DATE_STAMP}.json"
     if ! /app/bin/autocli linkedin recommended --limit 0 --with_jd true -f json > "${out}" 2>>"${LOG_FILE}"; then
