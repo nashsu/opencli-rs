@@ -97,7 +97,15 @@ def _refresh_metrics():
 @app.get("/api/health")
 def health():
     try:
-        r = httpx.get(f"http://{CHROME_HOST}:{CHROME_PORT}/json/version", timeout=2.0)
+        # Chrome DevTools rejects Host headers that aren't an IP or "localhost"
+        # (DNS-rebinding protection). We reach it by docker service name, so
+        # override the Host header to "localhost" — Chrome accepts that, and
+        # this is a yes/no liveness probe (we don't use the response body).
+        r = httpx.get(
+            f"http://{CHROME_HOST}:{CHROME_PORT}/json/version",
+            timeout=2.0,
+            headers={"Host": "localhost"},
+        )
         chrome_ok = r.status_code == 200
     except Exception:
         chrome_ok = False
