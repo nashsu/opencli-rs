@@ -260,28 +260,43 @@ mod tests {
 
     #[tokio::test]
     async fn test_connect_uses_cdp_endpoint_when_env_var_set() {
+        use autocli_core::CliError;
         use std::env;
 
-        env::set_var(
-            "AUTOCLI_CDP_ENDPOINT",
-            "ws://127.0.0.1:1/devtools/page/never",
-        );
+        struct EnvGuard(&'static str);
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                env::remove_var(self.0);
+            }
+        }
+
+        // Set AUTOCLI_CDP_ENDPOINT to an unreachable endpoint. Use a RAII guard so
+        // the var is removed even on panic, preventing cross-test leakage.
+        let _guard = EnvGuard("AUTOCLI_CDP_ENDPOINT");
+        env::set_var("AUTOCLI_CDP_ENDPOINT", "ws://127.0.0.1:1/devtools/page/never");
+
         let mut bridge = BrowserBridge::default_port();
         let result = bridge.connect().await;
-        env::remove_var("AUTOCLI_CDP_ENDPOINT");
-
         let err = match result {
             Err(e) => e,
             Ok(_) => panic!("connect() should fail against an unreachable CDP endpoint"),
         };
-        let msg = format!("{err}");
-        assert!(
-            msg.contains("Failed to connect to CDP endpoint") || msg.contains("CDP"),
-            "expected CDP-path error, got: {msg}"
-        );
-        assert!(
-            !msg.contains("Chrome is not running"),
-            "got daemon-path error — CDP env-var branch was not taken: {msg}"
-        );
+
+        // Assert the CDP path was taken: the error MUST be BrowserConnect with a CDP-flavored
+        // message. (Asserting on the variant + message-contains is robust to wording changes
+        // in the daemon path, since that path produces a different message format.)
+        match &err {
+            CliError::BrowserConnect { message, .. } => {
+                assert!(
+                    message.contains("CDP") || message.contains("Failed to connect"),
+                    "BrowserConnect was raised but not from the CDP path. message: {message}"
+                );
+                assert!(
+                    !message.contains("Chrome is not running"),
+                    "BrowserConnect came from the daemon path — CDP env-var branch was not taken. message: {message}"
+                );
+            }
+            other => panic!("expected CliError::BrowserConnect, got: {other:?}"),
+        }
     }
 }
