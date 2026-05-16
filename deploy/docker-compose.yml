@@ -14,7 +14,9 @@ services:
       TZ: ${TZ:-Europe/London}
     ports:
       - "6080:6080"   # noVNC web (also proxied via Cloudflare vnc subdomain)
-      - "5900:5900"   # native VNC (local-only convenience; not in Cloudflare ingress)
+      # native VNC 5900 intentionally NOT host-mapped: the prod host already has a
+      # process on :5900, and noVNC (6080) + the vnc.autocli Cloudflare route are the
+      # real access paths. Container still listens on 5900 internally for noVNC's websockify.
       - "9222:9222"   # CDP (also proxied via Cloudflare cdp subdomain — strict Access)
     volumes:
       - chrome-profile:/root/.config/chromium
