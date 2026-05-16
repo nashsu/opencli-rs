@@ -30,8 +30,8 @@ WORKDIR /app
 COPY deploy/daily/api/pyproject.toml deploy/daily/api/uv.lock* /app/api/
 RUN cd /app/api && uv sync --frozen --no-dev || uv sync --no-dev
 
-# Shipped sync script
-COPY scripts/sync_autocli_jobs.py /app/scripts/
+# Shipped sync script & priority scorer (sync imports the scorer modules at runtime)
+COPY scripts/sync_autocli_jobs.py scripts/job_priority_scorer.py scripts/job_priority_config.py /app/scripts/
 
 # FastAPI app
 COPY deploy/daily/api /app/api
