@@ -607,32 +607,60 @@ Only after Phase 4a is green:
 
 #### Phase 4c — Probe cdp.autocli
 
-The `cdp.autocli` Application carries the **dedicated** Service Token (different `CF_ID_CDP` / `CF_SECRET_CDP`) plus mTLS — `api.autocli`'s credentials must be rejected.
+The `cdp.autocli` Application carries the **dedicated** Service Token (different `CF_ID_CDP` / `CF_SECRET_CDP`) plus mTLS — `api.autocli`'s credentials must be rejected. Three HTTP probes plus one real WebSocket probe:
 
 ```bash
-# Unauthenticated → 302
+# 4c-1. Unauthenticated → 302
 curl -s -o /dev/null -w "%{http_code}\n" "https://cdp.autocli.${DOMAIN}/json/list"   # 302
 
-# Wrong (api-scoped) Service Token + no mTLS → 302/403 (proves CDP token is scoped)
+# 4c-2. Wrong (api-scoped) Service Token + no mTLS → 302/403 (proves CDP token is scoped)
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://cdp.autocli.${DOMAIN}/json/list" | head -1                # MUST be 302/403
+     "https://cdp.autocli.${DOMAIN}/json/list" | head -1                # MUST be 302 or 403
 
-# Right CDP Service Token + mTLS client cert → 200
+# 4c-3. Right CDP Service Token + mTLS client cert → 200
 curl -sI \
      -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
      --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
      "https://cdp.autocli.${DOMAIN}/json/list" | head -1                # HTTP/2 200
 
-# WebSocket upgrade (probes Cloudflare passes Upgrade headers correctly) — should not 4xx/5xx
-curl -sI \
-     -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
-     --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
-     -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
-     -H "Sec-WebSocket-Key: $(openssl rand -base64 16)" \
-     "https://cdp.autocli.${DOMAIN}/devtools/page/<id>" | head -1       # HTTP/2 101 Switching Protocols
+# 4c-4. Real WebSocket probe — must use a WebSocket client, NOT `curl -I` (HEAD).
+#       Cloudflare WS uses HTTP/1.1 Upgrade semantics (101 Switching Protocols);
+#       HTTP/2 has its own multiplexed WS (RFC 8441) but Cloudflare doesn't speak it,
+#       so the probe MUST force HTTP/1.1.
+#
+# Step 1: extract the actual page websocket URL and rewrite host to cdp.autocli.
+WS_URL=$(curl -s \
+  -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
+  --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
+  "https://cdp.autocli.${DOMAIN}/json/list" \
+  | jq -r '[.[] | select(.type == "page")][0].webSocketDebuggerUrl' \
+  | sed -E "s|ws://[^/]+|wss://cdp.autocli.${DOMAIN}|")
+echo "WS URL: ${WS_URL}"   # MUST be a non-empty wss://cdp.autocli.${DOMAIN}/devtools/page/<real-id>
+
+# Step 2 (preferred): use `websocat` for a real protocol-level handshake + one CDP round-trip.
+#   brew install websocat   # macOS;   apt install websocat   # Debian-derived
+echo '{"id":1,"method":"Target.getTargets"}' \
+  | websocat -1 -t \
+      --header="CF-Access-Client-Id: ${CF_ID_CDP}" \
+      --header="CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
+      --client-pkcs12-der "$HOME/.cf-access/cdp-client.p12" \
+      "${WS_URL}" \
+  | jq '.result.targetInfos | length'    # MUST be ≥ 1 (at least the current page is a target)
+
+# Step 2 (fallback if websocat unavailable): curl HTTP/1.1 GET with Upgrade headers.
+#   We swap scheme wss://→https:// so curl accepts the URL; -N disables output buffering;
+#   `-i` shows headers; do NOT use `-I` (HEAD).
+KEY=$(openssl rand -base64 16)
+curl --http1.1 -i -s -N --max-time 5 \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: ${KEY}" \
+  -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
+  --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
+  "${WS_URL/wss:/https:}" 2>&1 | head -1
+# Expect: "HTTP/1.1 101 Switching Protocols"  (NOT "HTTP/2 101" — that header doesn't exist.)
 ```
 
-✅ All Phase 4c probes match. The CDP surface is now live.
+✅ All four Phase 4c probes match. The CDP surface is now live.
 
 ### Phase 5 — Forced run via API
 ```bash
