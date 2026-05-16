@@ -21,7 +21,7 @@ docker compose up -d
 docker compose ps     # all 5 should be healthy
 
 # 3. One-time LinkedIn login via VNC
-#    Browse to https://vnc.autocli.<your-zone>/vnc.html, password from .env
+#    Browse to https://autocli-vnc.<your-zone>/vnc.html, password from .env
 #    Log into linkedin.com once, profile cookies persist in the
 #    `chrome-profile` named volume.
 
@@ -36,7 +36,7 @@ For each subdomain (`vnc`, `cdp`, `api`, `grafana`):
    `http://autocli-daily:8080` / `http://grafana:3000`.
 2. Access → Applications → Add Application → Self-Hosted →
    `<sub>.autocli.<your-zone>` → policies per SPEC §5.3 table.
-3. **Defer adding `cdp.autocli` until Phase 4a is green for the
+3. **Defer adding `autocli-cdp` until Phase 4a is green for the
    other three subdomains** (SPEC §9 risk 1).
 
 ## Forced run
@@ -46,7 +46,7 @@ curl -X POST \
   -H "CF-Access-Client-Id: $CF_ID" \
   -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/run
+  https://autocli-api.<your-zone>/api/run
 ```
 
 ## Troubleshooting

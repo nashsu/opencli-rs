@@ -1645,7 +1645,7 @@ docker compose up -d
 docker compose ps     # all 5 should be healthy
 
 # 3. One-time LinkedIn login via VNC
-#    Browse to https://vnc.autocli.<your-zone>/vnc.html, password from .env
+#    Browse to https://autocli-vnc.<your-zone>/vnc.html, password from .env
 #    Log into linkedin.com once, profile cookies persist in the
 #    `chrome-profile` named volume.
 
@@ -1660,7 +1660,7 @@ For each subdomain (`vnc`, `cdp`, `api`, `grafana`):
    `http://autocli-daily:8080` / `http://grafana:3000`.
 2. Access → Applications → Add Application → Self-Hosted →
    `<sub>.autocli.<your-zone>` → policies per SPEC §5.3 table.
-3. **Defer adding `cdp.autocli` until Phase 4a is green for the
+3. **Defer adding `autocli-cdp` until Phase 4a is green for the
    other three subdomains** (SPEC §9 risk 1).
 
 ## Forced run
@@ -1670,7 +1670,7 @@ curl -X POST \
   -H "CF-Access-Client-Id: $CF_ID" \
   -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/run
+  https://autocli-api.<your-zone>/api/run
 ```
 
 ## Troubleshooting
@@ -2142,7 +2142,7 @@ Expected: 5 services `Up` and `healthy` (autocli-chrome, autocli-daily, autocli-
 
 From the operator's laptop on Tailscale: open `http://100.108.80.9:6080/vnc.html?password=<VNC_PASSWORD-from-step-2>`. Log into linkedin.com once. Close the tab.
 
-After Cloudflare ingress (Phase 4) is up the operator will use `vnc.autocli.<your-zone>/vnc.html` instead; Tailscale path is the bootstrap.
+After Cloudflare ingress (Phase 4) is up the operator will use `autocli-vnc.<your-zone>/vnc.html` instead; Tailscale path is the bootstrap.
 
 No commit.
 
@@ -2159,18 +2159,18 @@ This is **operator UI work** (Cloudflare Zero Trust dashboard).
 - [ ] **Step 1: Tunnel → Public Hostnames**
 
 In the existing Tunnel (the one whose token is in `.env`), add:
-1. `vnc.autocli.<your-zone>` → `http://autocli-chrome:6080`
-2. `api.autocli.<your-zone>` → `http://autocli-daily:8080`
-3. `grafana.autocli.<your-zone>` → `http://grafana:3000`
+1. `autocli-vnc.<your-zone>` → `http://autocli-chrome:6080`
+2. `autocli-api.<your-zone>` → `http://autocli-daily:8080`
+3. `autocli-grafana.<your-zone>` → `http://grafana:3000`
 
-**Do NOT add `cdp.autocli` yet.**
+**Do NOT add `autocli-cdp` yet.**
 
 - [ ] **Step 2: Access → Applications**
 
 Create one Self-Hosted Application per subdomain. Policies per SPEC §5.3:
-- `vnc.autocli`: Policy "operator email + WARP device posture" only.
-- `api.autocli`: Policy "Service Token" AND Policy "operator email" (OR semantics within Application).
-- `grafana.autocli`: Policy "operator email OTP" only.
+- `autocli-vnc`: Policy "operator email + WARP device posture" only.
+- `autocli-api`: Policy "Service Token" AND Policy "operator email" (OR semantics within Application).
+- `autocli-grafana`: Policy "operator email OTP" only.
 
 Create a **Service Token** under Access → Service Auth. Save the `Client ID` and `Client Secret` — these are the `CF_ID` / `CF_SECRET` used by Phase 4 probes.
 
@@ -2184,37 +2184,37 @@ TOKEN="$(sshpass -p '1234' ssh rick@100.108.80.9 'grep ^API_RUN_TOKEN= ~/autocli
 
 # 1. Unauthenticated → all three should 302
 for sub in vnc api grafana; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "https://${sub}.autocli.${DOMAIN}/")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "https://autocli-${sub}.${DOMAIN}/")
   echo "${sub} unauth: ${code}"
 done
 # Expected: each "302"
 
 # 2. Service Token on humans-only subdomains → still 302
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://vnc.autocli.${DOMAIN}/"     | head -1
+     "https://autocli-vnc.${DOMAIN}/"     | head -1
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://grafana.autocli.${DOMAIN}/" | head -1
+     "https://autocli-grafana.${DOMAIN}/" | head -1
 # Expected: both HTTP/2 302
 
 # 3. api.autocli — Service Token grants access
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://api.autocli.${DOMAIN}/api/health" | head -1
+     "https://autocli-api.${DOMAIN}/api/health" | head -1
 # Expected: HTTP/2 200
 
 # 4. Bearer enforcement
 curl -sI -X POST -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://api.autocli.${DOMAIN}/api/run" | head -1
+     "https://autocli-api.${DOMAIN}/api/run" | head -1
 # Expected: HTTP/2 401
 
 curl -sI -X POST -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
      -H "Authorization: Bearer ${TOKEN}" \
-     "https://api.autocli.${DOMAIN}/api/run" | head -1
+     "https://autocli-api.${DOMAIN}/api/run" | head -1
 # Expected: HTTP/2 202 (or 409 if a run is already in flight — re-run after a couple of min)
 
 # 5. /jobs (Bearer required)
 curl -s -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
      -H "Authorization: Bearer ${TOKEN}" \
-     "https://api.autocli.${DOMAIN}/jobs?since=2026-05-15" | jq '.count'
+     "https://autocli-api.${DOMAIN}/jobs?since=2026-05-15" | jq '.count'
 # Expected: ≥ 0
 ```
 
@@ -2245,13 +2245,13 @@ Set permissions `chmod 600 ~/.cf-access/cdp-client.*`.
 
 - [ ] **Step 4: Create cdp.autocli Access Application**
 
-Application → Self-Hosted → hostname `cdp.autocli.<your-zone>`. Add:
+Application → Self-Hosted → hostname `autocli-cdp.<your-zone>`. Add:
 - Policy A (machines): require Service Token = `autocli-cdp` **AND** mTLS client cert valid for the CA above.
 - Policy B (humans): require operator email + **required** WARP device posture.
 
 - [ ] **Step 5: Add Tunnel ingress for cdp.autocli**
 
-Tunnel → Public Hostnames → Add `cdp.autocli.<your-zone>` → `http://autocli-chrome:9222`.
+Tunnel → Public Hostnames → Add `autocli-cdp.<your-zone>` → `http://autocli-chrome:9222`.
 
 No commit.
 
@@ -2273,19 +2273,19 @@ CF_ID_CDP="<cdp-service-token-client-id>"
 CF_SECRET_CDP="<cdp-service-token-client-secret>"
 
 # 4c-1. Unauthenticated → 302
-curl -s -o /dev/null -w "%{http_code}\n" "https://cdp.autocli.${DOMAIN}/json/list"
+curl -s -o /dev/null -w "%{http_code}\n" "https://autocli-cdp.${DOMAIN}/json/list"
 # Expected: 302
 
 # 4c-2. api-scoped token (wrong scope, no mTLS) → 302 or 403
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://cdp.autocli.${DOMAIN}/json/list" | head -1
+     "https://autocli-cdp.${DOMAIN}/json/list" | head -1
 # Expected: HTTP/2 302 or HTTP/2 403
 
 # 4c-3. Correct cdp token + mTLS → 200
 curl -sI \
      -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
      --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
-     "https://cdp.autocli.${DOMAIN}/json/list" | head -1
+     "https://autocli-cdp.${DOMAIN}/json/list" | head -1
 # Expected: HTTP/2 200
 ```
 
@@ -2297,9 +2297,9 @@ Install websocat first (`brew install websocat` or `apt install websocat`).
 WS_URL=$(curl -s \
   -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
   --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
-  "https://cdp.autocli.${DOMAIN}/json/list" \
+  "https://autocli-cdp.${DOMAIN}/json/list" \
   | jq -r '[.[] | select(.type == "page")][0].webSocketDebuggerUrl' \
-  | sed -E "s|ws://[^/]+|wss://cdp.autocli.${DOMAIN}|")
+  | sed -E "s|ws://[^/]+|wss://autocli-cdp.${DOMAIN}|")
 echo "WS_URL=${WS_URL}"
 
 echo '{"id":1,"method":"Target.getTargets"}' \
@@ -2331,7 +2331,7 @@ curl -X POST \
   -H "CF-Access-Client-Id: $CF_ID" \
   -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/run
+  https://autocli-api.<your-zone>/api/run
 # Expected: {"started_at": ..., "pid": ...} with HTTP 202
 ```
 
@@ -2342,7 +2342,7 @@ sleep 300   # generous: gives all 3 retry attempts time to complete
 curl -s \
   -H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/status | jq
+  https://autocli-api.<your-zone>/api/status | jq
 ```
 
 Expected: `last_exit_code: 0`, `rows_upserted > 0`, `run_in_progress: false`.
@@ -2358,7 +2358,7 @@ Expected: matches the `rows_upserted` from `/api/status`.
 
 - [ ] **Step 4: Verify Grafana dashboard**
 
-Browser to `https://grafana.autocli.<your-zone>` → login → Dashboards → "AutoCLI Daily":
+Browser to `https://autocli-grafana.<your-zone>` → login → Dashboards → "AutoCLI Daily":
 - "Time since last run" should be small (single-digit minutes)
 - "Last exit code" = 0 (green)
 - "Rows upserted today" = same number as Step 3
@@ -2382,7 +2382,7 @@ No commit.
 curl -s \
   -H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/status | jq '.last_run_unixts | strftime("%Y-%m-%d %H:%M:%S")'
+  https://autocli-api.<your-zone>/api/status | jq '.last_run_unixts | strftime("%Y-%m-%d %H:%M:%S")'
 ```
 
 Expected: timestamp within 5 minutes of 03:00 (today's date).

@@ -5,7 +5,7 @@
 | **Date** | 2026-05-16 |
 | **Branch** | `feat/daily-microservice` (separate worktree, branched from `main`) |
 | **Target host** | `100.108.80.9` (Tailscale, Ubuntu 24.04, Docker 29.4) |
-| **Public endpoint** | 4 subdomains under `<your-zone>` — `vnc.autocli.<your-zone>`, `cdp.autocli.<your-zone>`, `api.autocli.<your-zone>` (carries `/api/*` AND `/jobs`), `grafana.autocli.<your-zone>` — via Cloudflare Tunnel `--token` mode |
+| **Public endpoint** | 4 subdomains under `<your-zone>` — `autocli-vnc.<your-zone>`, `autocli-cdp.<your-zone>`, `autocli-api.<your-zone>` (carries `/api/*` AND `/jobs`), `autocli-grafana.<your-zone>` — via Cloudflare Tunnel `--token` mode |
 | **Goal** | Convert the manual daily flow (`autocli linkedin recommended … | uv run scripts/sync_autocli_jobs.py`) into an auto-scheduled, externally accessible microservice with monitoring. |
 
 ---
@@ -86,10 +86,10 @@ Run against the operator's local Stagehand Chrome. Expect a non-empty JSON array
                                                          ▼
                                          Cloudflare Edge (HTTPS + Access)
                                          ▼
-                  vnc.autocli.<your-zone>     → chrome:6080
-                  cdp.autocli.<your-zone>     → chrome:9222 (strict Access)
-                  api.autocli.<your-zone>     → daily:8080  (serves /api/* AND /jobs)
-                  grafana.autocli.<your-zone> → grafana:3000
+                  autocli-vnc.<your-zone>     → chrome:6080
+                  autocli-cdp.<your-zone>     → chrome:9222 (strict Access)
+                  autocli-api.<your-zone>     → daily:8080  (serves /api/* AND /jobs)
+                  autocli-grafana.<your-zone> → grafana:3000
 ```
 
 ### 2.2 Component contracts
@@ -359,10 +359,10 @@ In token mode **ingress rules live in the Cloudflare dashboard**, not in a local
 
 | Public hostname | Origin (docker service) | Notes |
 |---|---|---|
-| `vnc.autocli.<your-zone>` | `http://autocli-chrome:6080` | noVNC web client |
-| `cdp.autocli.<your-zone>` | `http://autocli-chrome:9222` | CDP HTTP + WebSocket upgrade |
-| `api.autocli.<your-zone>` | `http://autocli-daily:8080` | FastAPI: `/api/*` (status, run, logs, metrics, health) AND `/jobs` (Supabase read proxy) |
-| `grafana.autocli.<your-zone>` | `http://grafana:3000` | Subdomain → no `serve_from_sub_path` needed |
+| `autocli-vnc.<your-zone>` | `http://autocli-chrome:6080` | noVNC web client |
+| `autocli-cdp.<your-zone>` | `http://autocli-chrome:9222` | CDP HTTP + WebSocket upgrade |
+| `autocli-api.<your-zone>` | `http://autocli-daily:8080` | FastAPI: `/api/*` (status, run, logs, metrics, health) AND `/jobs` (Supabase read proxy) |
+| `autocli-grafana.<your-zone>` | `http://grafana:3000` | Subdomain → no `serve_from_sub_path` needed |
 
 These four hostnames are configured in the dashboard under the same Tunnel. Implementation produces a screenshot/checklist for the operator to apply.
 
@@ -370,14 +370,14 @@ These four hostnames are configured in the dashboard under the same Tunnel. Impl
 
 | Subdomain | Policy A (machines) | Policy B (humans) |
 |---|---|---|
-| `cdp.autocli` | **Dedicated** Service Token (separate from api.autocli's), short-lived rotation, **plus** mTLS client-certificate validation on the same Access Application | Operator email OTP + **required** WARP device posture (Cloudflare WARP enrolled, healthy device) |
-| `vnc.autocli` | — (humans only; scripts have no business here) | Operator email OTP + required WARP device posture |
-| `api.autocli` | Service Token (used by `curl` / scripts for `/api/*` and `/jobs`) | Operator email OTP |
-| `grafana.autocli` | — (humans only) | Operator email OTP |
+| `autocli-cdp` | **Dedicated** Service Token (separate from api.autocli's), short-lived rotation, **plus** mTLS client-certificate validation on the same Access Application | Operator email OTP + **required** WARP device posture (Cloudflare WARP enrolled, healthy device) |
+| `autocli-vnc` | — (humans only; scripts have no business here) | Operator email OTP + required WARP device posture |
+| `autocli-api` | Service Token (used by `curl` / scripts for `/api/*` and `/jobs`) | Operator email OTP |
+| `autocli-grafana` | — (humans only) | Operator email OTP |
 
-> **Why no IP allow-list on `cdp.autocli`.** Cloudflare Access sees the caller's public/WARP-egress IP at the Cloudflare edge — it never sees the Tailscale `100.x` CGNAT address (Tailscale only connects operator devices to the home server, not to Cloudflare). An IP allow-list scoped to "Tailscale range" would never match and would be misleading security theatre. We use **mTLS + dedicated short-lived Service Token + WARP posture** as the strong layers instead.
+> **Why no IP allow-list on `autocli-cdp`.** Cloudflare Access sees the caller's public/WARP-egress IP at the Cloudflare edge — it never sees the Tailscale `100.x` CGNAT address (Tailscale only connects operator devices to the home server, not to Cloudflare). An IP allow-list scoped to "Tailscale range" would never match and would be misleading security theatre. We use **mTLS + dedicated short-lived Service Token + WARP posture** as the strong layers instead.
 
-`cdp.autocli` is the most sensitive surface — the CDP WebSocket is equivalent to a remote shell on the browser. Its Application therefore carries the extra mTLS requirement, a dedicated short-lived Service Token, and WARP-required human policy. (Network-selector / IP allow-lists are deliberately omitted; see callout above.)
+`autocli-cdp` is the most sensitive surface — the CDP WebSocket is equivalent to a remote shell on the browser. Its Application therefore carries the extra mTLS requirement, a dedicated short-lived Service Token, and WARP-required human policy. (Network-selector / IP allow-lists are deliberately omitted; see callout above.)
 
 ### 5.4 Prometheus metrics emitted by `autocli-daily`
 
@@ -421,7 +421,7 @@ Single dashboard, six panels (all backed by the bundled Prometheus datasource �
 5. **Time series — Run duration (30 d)**
 6. **Stat — Chrome CDP up (24 h uptime %)**
 
-Logs are read out of band via `curl https://api.autocli.<your-zone>/api/logs` or `docker logs autocli-daily`. A future PR may add Loki + a Grafana logs panel; that is out of scope for this design.
+Logs are read out of band via `curl https://autocli-api.<your-zone>/api/logs` or `docker logs autocli-daily`. A future PR may add Loki + a Grafana logs panel; that is out of scope for this design.
 
 Dashboard JSON and the datasource pointer are committed under `grafana/provisioning/`, so a fresh Grafana container reproduces the dashboard automatically.
 
@@ -554,7 +554,7 @@ docker compose up -d
 
 ### Phase 4 — Tunnel & Access reachable
 
-Phase 4 is split into three sub-phases because `cdp.autocli` is the high-risk surface and must not be exposed until the rest is proven. Each sub-phase is a hard gate.
+Phase 4 is split into three sub-phases because `autocli-cdp` is the high-risk surface and must not be exposed until the rest is proven. Each sub-phase is a hard gate.
 
 ```bash
 DOMAIN="<your-zone>"
@@ -564,80 +564,80 @@ TOKEN="<API_RUN_TOKEN from server .env>"
 ```
 
 #### Phase 4a — Pre-CDP gate: add 3 subdomains to the Cloudflare Tunnel dashboard
-Add `vnc.autocli`, `api.autocli`, `grafana.autocli` (NOT `cdp.autocli` yet). Then probe:
+Add `autocli-vnc`, `autocli-api`, `autocli-grafana` (NOT `autocli-cdp` yet). Then probe:
 
 ```bash
 # Unauthenticated → 302 to Cloudflare Access login (never 200, never 502)
 for sub in vnc api grafana; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "https://${sub}.autocli.${DOMAIN}/")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "https://autocli-${sub}.${DOMAIN}/")
   echo "${sub} unauth: ${code}"     # MUST be 302
 done
 
 # Humans-only negative machine probe — vnc/grafana have NO Service Token policy by design.
 # Sending a Service Token must STILL produce 302 (machines are not admitted; only email OTP is).
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://vnc.autocli.${DOMAIN}/"     | head -1   # MUST be 302 — proves Service Token does NOT grant access here
+     "https://autocli-vnc.${DOMAIN}/"     | head -1   # MUST be 302 — proves Service Token does NOT grant access here
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://grafana.autocli.${DOMAIN}/" | head -1   # MUST be 302 — same negative-probe semantics
+     "https://autocli-grafana.${DOMAIN}/" | head -1   # MUST be 302 — same negative-probe semantics
 
 # Machine probe — api.autocli is the ONLY subdomain in 4a with a Service Token policy
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://api.autocli.${DOMAIN}/api/health" | head -1              # HTTP/2 200 (open endpoint after Access)
+     "https://autocli-api.${DOMAIN}/api/health" | head -1              # HTTP/2 200 (open endpoint after Access)
 curl -s  -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
      -H "Authorization: Bearer ${TOKEN}" \
-     "https://api.autocli.${DOMAIN}/api/metrics" | grep -c autocli_daily_   # ≥ 5
+     "https://autocli-api.${DOMAIN}/api/metrics" | grep -c autocli_daily_   # ≥ 5
 
 # API_RUN_TOKEN enforcement (independent of Cloudflare Access)
 curl -sI -X POST -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://api.autocli.${DOMAIN}/api/run" | head -1                 # HTTP/2 401 (no Bearer)
+     "https://autocli-api.${DOMAIN}/api/run" | head -1                 # HTTP/2 401 (no Bearer)
 curl -sI -X POST -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
      -H "Authorization: Bearer ${TOKEN}" \
-     "https://api.autocli.${DOMAIN}/api/run" | head -1                 # HTTP/2 202
+     "https://autocli-api.${DOMAIN}/api/run" | head -1                 # HTTP/2 202
 
 # /jobs read proxy
 curl -s  -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
      -H "Authorization: Bearer ${TOKEN}" \
-     "https://api.autocli.${DOMAIN}/jobs?since=2026-05-15" | jq 'length'  # ≥ 0
+     "https://autocli-api.${DOMAIN}/jobs?since=2026-05-15" | jq 'length'  # ≥ 0
 ```
 
 ✅ All Phase 4a probes match expected codes. **Phase 4b runs only if every line above passed.**
 
 #### Phase 4b — Add cdp.autocli to the Cloudflare Tunnel dashboard
 Only after Phase 4a is green:
-1. Confirm Access Application for `cdp.autocli` exists with **two** policies (dedicated short-lived Service Token + mTLS client-cert; AND operator email + required WARP device posture). See §5.3.
+1. Confirm Access Application for `autocli-cdp` exists with **two** policies (dedicated short-lived Service Token + mTLS client-cert; AND operator email + required WARP device posture). See §5.3.
 2. Add the hostname to the Tunnel dashboard pointing at `http://autocli-chrome:9222`.
 
 #### Phase 4c — Probe cdp.autocli
 
-The `cdp.autocli` Application carries the **dedicated** Service Token (different `CF_ID_CDP` / `CF_SECRET_CDP`) plus mTLS — `api.autocli`'s credentials must be rejected. Three HTTP probes plus one real WebSocket probe:
+The `autocli-cdp` Application carries the **dedicated** Service Token (different `CF_ID_CDP` / `CF_SECRET_CDP`) plus mTLS — `autocli-api`'s credentials must be rejected. Three HTTP probes plus one real WebSocket probe:
 
 ```bash
 # 4c-1. Unauthenticated → 302
-curl -s -o /dev/null -w "%{http_code}\n" "https://cdp.autocli.${DOMAIN}/json/list"   # 302
+curl -s -o /dev/null -w "%{http_code}\n" "https://autocli-cdp.${DOMAIN}/json/list"   # 302
 
 # 4c-2. Wrong (api-scoped) Service Token + no mTLS → 302/403 (proves CDP token is scoped)
 curl -sI -H "CF-Access-Client-Id: ${CF_ID}" -H "CF-Access-Client-Secret: ${CF_SECRET}" \
-     "https://cdp.autocli.${DOMAIN}/json/list" | head -1                # MUST be 302 or 403
+     "https://autocli-cdp.${DOMAIN}/json/list" | head -1                # MUST be 302 or 403
 
 # 4c-3. Right CDP Service Token + mTLS client cert → 200
 curl -sI \
      -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
      --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
-     "https://cdp.autocli.${DOMAIN}/json/list" | head -1                # HTTP/2 200
+     "https://autocli-cdp.${DOMAIN}/json/list" | head -1                # HTTP/2 200
 
 # 4c-4. Real WebSocket probe — must use a WebSocket client, NOT `curl -I` (HEAD).
 #       Cloudflare WS uses HTTP/1.1 Upgrade semantics (101 Switching Protocols);
 #       HTTP/2 has its own multiplexed WS (RFC 8441) but Cloudflare doesn't speak it,
 #       so the probe MUST force HTTP/1.1.
 #
-# Step 1: extract the actual page websocket URL and rewrite host to cdp.autocli.
+# Step 1: extract the actual page websocket URL and rewrite host to autocli-cdp.
 WS_URL=$(curl -s \
   -H "CF-Access-Client-Id: ${CF_ID_CDP}" -H "CF-Access-Client-Secret: ${CF_SECRET_CDP}" \
   --cert "$HOME/.cf-access/cdp-client.crt" --key "$HOME/.cf-access/cdp-client.key" \
-  "https://cdp.autocli.${DOMAIN}/json/list" \
+  "https://autocli-cdp.${DOMAIN}/json/list" \
   | jq -r '[.[] | select(.type == "page")][0].webSocketDebuggerUrl' \
-  | sed -E "s|ws://[^/]+|wss://cdp.autocli.${DOMAIN}|")
-echo "WS URL: ${WS_URL}"   # MUST be a non-empty wss://cdp.autocli.${DOMAIN}/devtools/page/<real-id>
+  | sed -E "s|ws://[^/]+|wss://autocli-cdp.${DOMAIN}|")
+echo "WS URL: ${WS_URL}"   # MUST be a non-empty wss://autocli-cdp.${DOMAIN}/devtools/page/<real-id>
 
 # Step 2 (preferred): use `websocat` for a real protocol-level handshake + one CDP round-trip.
 #   brew install websocat   # macOS;   apt install websocat   # Debian-derived
@@ -670,13 +670,13 @@ curl -X POST \
   -H "CF-Access-Client-Id: $CF_ID" \
   -H "CF-Access-Client-Secret: $CF_SECRET" \
   -H "Authorization: Bearer $API_RUN_TOKEN" \
-  https://api.autocli.<your-zone>/api/run
+  https://autocli-api.<your-zone>/api/run
 sleep 240   # max single-attempt budget; retries follow §5.2 schedule (15s, 60s, 240s)
 
 # /api/status is Bearer-protected — same token as /api/run
 curl -s -H "CF-Access-Client-Id: $CF_ID" -H "CF-Access-Client-Secret: $CF_SECRET" \
      -H "Authorization: Bearer $API_RUN_TOKEN" \
-     https://api.autocli.<your-zone>/api/status | jq
+     https://autocli-api.<your-zone>/api/status | jq
 ```
 ✅ `last_exit_code == 0`, `rows_upserted > 0`; Supabase shows new rows; Grafana dashboard shows the run.
 
@@ -711,10 +711,10 @@ Two days, no manual intervention, `last_run_unixts` advances daily, no failed ru
 
 ## 9. Risks & Open Items
 
-1. **CDP public exposure.** Cloudflare Access *must* be configured before bringing the CDP surface up. The implementation will refuse to add the `cdp.autocli.<your-zone>` hostname to the Cloudflare Tunnel dashboard until every probe in §7 **Phase 4a** passes for the other three subdomains (`vnc`, `api`, `grafana`) AND the operator has confirmed the Access Application for `cdp.autocli` exists with both policies described in §5.3 (dedicated short-lived Service Token + mTLS for machines; operator email + required WARP posture for humans). Only then does **Phase 4b** add the ingress, followed by **Phase 4c** probes.
+1. **CDP public exposure.** Cloudflare Access *must* be configured before bringing the CDP surface up. The implementation will refuse to add the `autocli-cdp.<your-zone>` hostname to the Cloudflare Tunnel dashboard until every probe in §7 **Phase 4a** passes for the other three subdomains (`vnc`, `api`, `grafana`) AND the operator has confirmed the Access Application for `autocli-cdp` exists with both policies described in §5.3 (dedicated short-lived Service Token + mTLS for machines; operator email + required WARP posture for humans). Only then does **Phase 4b** add the ingress, followed by **Phase 4c** probes.
 2. **LinkedIn cookie lifetime.** Empirically 30-90 days. When it expires, `last_exit_code` becomes non-zero with a recognisable error string. Operator action: open `/vnc/` → re-login. No code change needed.
 3. **Skyvern decommission.** The operator authorised stopping `skyvern-skyvern-{1,ui-1}`. Their data volumes are not deleted by this design — only the running containers. Skyvern can be re-enabled later by `docker compose up` from its own compose file if needed.
-4. **`<your-zone>`.** Spec leaves the apex hostname as a placeholder; the operator must provide it (and verify it is a Cloudflare-managed zone) before Phase 3. The 4 subdomains are `{vnc,cdp,api,grafana}.autocli.<your-zone>`. `/jobs` rides on `api.autocli`, not its own subdomain.
+4. **`<your-zone>`.** Spec leaves the apex hostname as a placeholder; the operator must provide it (and verify it is a Cloudflare-managed zone) before Phase 3. The 4 subdomains are flattened to **one level** — `autocli-{vnc,cdp,api,grafana}.<your-zone>` — because Cloudflare Universal SSL on Free plans covers only `<your-zone>` + one-level `*.<your-zone>` (two-level subdomains like `vnc.autocli.<zone>` would TLS-handshake-fail until the operator upgrades to Pro / Total TLS / ACM). `/jobs` rides on `autocli-api`, not its own subdomain.
 5. **`API_RUN_TOKEN` rotation.** Generated at first deploy and stored only on the server. Rotation requires editing `.env` and `docker compose restart autocli-daily`.
 
 ---
