@@ -19,10 +19,35 @@ env:
 jobs:
   build-autocli-binary:
     runs-on: ubuntu-latest
+    # Build inside Debian Bookworm to match the daily runtime image's GLIBC
+    # (python:3.12-slim-bookworm = GLIBC 2.36). Building on ubuntu-latest host
+    # gave GLIBC 2.39 binaries that wouldn't load in the runtime image with
+    # "GLIBC_2.39 not found".
+    container:
+      image: rust:1.94-slim-bookworm
     steps:
       - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p autocli
+      - name: Verify binary GLIBC requirement is bookworm-compatible
+        run: |
+          # objdump may not be present in slim; use readelf
+          apt-get install -y -qq --no-install-recommends binutils
+          REQ=$(readelf -V target/release/autocli 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1)
+          echo "max GLIBC requirement: $REQ"
+          # Bookworm ships GLIBC 2.36. Reject if binary needs >2.36.
+          MAJMIN=$(echo "$REQ" | sed 's/GLIBC_//')
+          if [ "$(printf '%s\n%s\n' "$MAJMIN" "2.36" | sort -V | tail -1)" != "2.36" ] && [ "$MAJMIN" != "2.36" ]; then
+            # MAJMIN > 2.36 → fail loud
+            if [ "$(printf '%s\n%s\n' "$MAJMIN" "2.36" | sort -V | head -1)" = "2.36" ]; then
+              echo "FAIL: binary needs $REQ but runtime image is GLIBC 2.36" >&2
+              exit 1
+            fi
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: autocli-bin
