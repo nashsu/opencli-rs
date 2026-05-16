@@ -1,0 +1,32 @@
+# Local override for Phase 1 testing.
+# Run:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml --env-file deploy/.env.local up -d
+
+name: autocli-stack-local
+
+services:
+  autocli-chrome:
+    container_name: autocli-chrome-local
+    image: test-chrome:latest        # built locally in Phase 0
+    ports:
+      - "6081:6080"
+      - "5902:5900"
+      - "9223:9222"
+
+  autocli-daily:
+    container_name: autocli-daily-local
+    image: test-daily:latest         # built locally in Phase 0
+    ports:
+      - "8081:8080"
+
+  # No Cloudflare in local mode
+  cloudflared:
+    profiles: ["disabled"]
+
+  prometheus:
+    ports:
+      - "9091:9090"
+
+  grafana:
+    ports:
+      - "3001:3000"

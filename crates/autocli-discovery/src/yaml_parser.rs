@@ -185,4 +185,32 @@ domain: www.bilibili.com
         let yaml = "name: test\n";
         assert!(parse_yaml_adapter(yaml).is_err());
     }
+
+    #[test]
+    fn test_linkedin_recommended_declares_jd_toggle() {
+        let yaml = include_str!("../../../adapters/linkedin/recommended.yaml");
+        let cmd = parse_yaml_adapter(yaml).unwrap();
+
+        assert_eq!(cmd.site, "linkedin");
+        assert_eq!(cmd.name, "recommended");
+        assert!(cmd.func.is_none(), "linkedin recommended must use YAML pipeline path");
+        assert!(cmd.columns.iter().any(|col| col == "jd"));
+        assert!(cmd.columns.iter().any(|col| col == "external_url"));
+        assert!(yaml.contains("companyApplyUrl"));
+
+        let with_jd = cmd
+            .args
+            .iter()
+            .find(|arg| arg.name == "with_jd")
+            .expect("with_jd arg should be declared by the YAML adapter");
+        assert_eq!(with_jd.arg_type, ArgType::Bool);
+        assert_eq!(with_jd.default, Some(Value::Bool(false)));
+
+        let pipeline = serde_json::to_string(&cmd.pipeline).unwrap();
+        assert!(pipeline.contains("withJd"));
+        assert!(pipeline.contains("/voyager/api/jobs/jobPostings/"));
+        assert!(pipeline.contains("description"));
+        assert!(pipeline.contains("jd:"));
+        assert!(pipeline.contains("limit > 0"));
+    }
 }

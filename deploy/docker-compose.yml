@@ -1,0 +1,112 @@
+name: autocli-stack
+
+x-watchtower-label: &watchtower-enable
+  com.centurylinklabs.watchtower.enable: "true"
+
+services:
+  autocli-chrome:
+    image: ghcr.io/ricksanchez88e/autocli-chrome:main
+    container_name: autocli-chrome
+    restart: unless-stopped
+    shm_size: "2gb"
+    environment:
+      VNC_PASSWORD: ${VNC_PASSWORD}
+      TZ: ${TZ:-Europe/London}
+    ports:
+      # Both 6080 (noVNC) and 9222 (CDP) bound to loopback ONLY. Public access
+      # routes through Cloudflare Tunnel + Access (autocli-vnc.<zone> for noVNC,
+      # autocli-cdp.<zone> with mTLS for CDP per SPEC §5.3). Without 127.0.0.1
+      # binding, anyone with Tailscale or the host IP would have direct
+      # unauthenticated CDP / VNC access — bypassing every auth layer.
+      # If you need a backup path, use `ssh -L 6080:localhost:6080` from a
+      # Tailscale-connected machine.
+      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:9222:9222"
+    volumes:
+      - chrome-profile:/root/.config/chromium
+      - chrome-tmp:/tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9222/json/version"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks: [autocli-net]
+    labels: *watchtower-enable
+
+  autocli-daily:
+    image: ghcr.io/ricksanchez88e/autocli-daily:main
+    container_name: autocli-daily
+    restart: unless-stopped
+    depends_on:
+      autocli-chrome:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Europe/London}
+      CHROME_HOST: autocli-chrome
+      CHROME_PORT: "9222"
+      API_RUN_TOKEN: ${API_RUN_TOKEN}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+    volumes:
+      - daily-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    networks: [autocli-net]
+    labels: *watchtower-enable
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.3.0
+    container_name: autocli-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      autocli-daily:
+        condition: service_healthy
+    networks: [autocli-net]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: autocli-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    networks: [autocli-net]
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: autocli-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks: [autocli-net]
+
+networks:
+  autocli-net:
+    driver: bridge
+
+volumes:
+  chrome-profile:
+  chrome-tmp:
+  daily-data:
+  prom-data:
+  grafana-data:

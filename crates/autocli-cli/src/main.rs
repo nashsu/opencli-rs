@@ -539,6 +539,21 @@ async fn main() {
                     tracing::debug!(port, version = current_version, "Spawned daemon in background");
                 }
             }
+
+            // Wait for newly-spawned daemon to become ready before proceeding.
+            // Without this, BrowserBridge may find the daemon listening but not fully
+            // initialized, causing the first /command POST to fail with a transient
+            // "Request error" and triggering WARN retries.
+            let health_url = format!("http://127.0.0.1:{}/health", port);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < deadline {
+                if let Some(c) = &client {
+                    if let Ok(resp) = c.get(&health_url).send().await {
+                        if resp.status().is_success() { break; }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
         }
     }
 
