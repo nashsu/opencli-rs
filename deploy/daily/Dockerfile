@@ -51,9 +51,10 @@ RUN mkdir -p /data/output /data/logs /run && \
     install -m 0644 /dev/null /data/logs/.keep && \
     install -m 0644 /dev/null /data/output/.keep
 
-ENV TZ=Europe/London \
-    CRON_SCHEDULE="0 3 * * *" \
-    OUTPUT_RETENTION_DAYS=30
+ENV TZ=Europe/London
+# CRON_SCHEDULE / OUTPUT_RETENTION_DAYS were here previously but supercronic
+# reads /etc/cron.d/autocli verbatim and does NOT do env substitution, so
+# the env vars were misleading placebos. Schedule lives in deploy/daily/crontab.
 
 EXPOSE 8080
 

@@ -133,18 +133,23 @@ def main(argv: list[str] | None = None) -> int:
     # ── Build query ──────────────────────────────────────────────────────
     client = _create_supabase_client(args.supabase_url, args.supabase_key)
 
-    query = client.table("jobs.jobs").select(
+    query = client.schema("jobs").table("jobs").select(
         "id, source, raw_record, "
         "job_title, company_name, location, salary, post_time, "
         "apply_url, external_url, job_description, "
         "apply_type, source_channel, "
-        "priority_score, priority_scorer_version"
+        "priority_score, priority_scorer_version, priority_scored_at"
     )
 
     if not args.force:
-        # Only rows that have never been scored or whose version is stale
+        # Only rows that have never been *explicitly* scored OR whose version
+        # is stale. priority_score itself can NOT be the filter — the
+        # migration's NOT NULL DEFAULT 0 means already-migrated rows look
+        # "scored" with priority_score=0 even though they were never actually
+        # run through the scorer. priority_scored_at IS NULL is the only
+        # honest "never scored" signal.
         query = query.or_(
-            f"priority_score.is.null,priority_scorer_version.neq.{SCORER_VERSION}"
+            f"priority_scored_at.is.null,priority_scorer_version.neq.{SCORER_VERSION}"
         )
     else:
         # Re-score everything (order so newer-first is optional but nice)

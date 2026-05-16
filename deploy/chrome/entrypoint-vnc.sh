@@ -35,9 +35,13 @@ x11vnc -display :99 \
        -forever -shared \
        -rfbauth /root/.vnc/passwd \
        -rfbport 5900 \
-       -nopw \
        -bg \
        -o /tmp/x11vnc.log
+# -nopw removed: it was overriding -rfbauth and leaving VNC open with no
+# password. Anyone reaching :5900 (native VNC) or :6080 (noVNC web) could
+# drive the logged-in browser. Now password auth from /root/.vnc/passwd is
+# actually enforced. The compose file additionally binds the host ports to
+# 127.0.0.1 so the only public path is Cloudflare Tunnel + Access.
 echo "[entrypoint] x11vnc on :5900"
 
 # noVNC web 网关

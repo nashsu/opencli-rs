@@ -13,11 +13,15 @@ services:
       VNC_PASSWORD: ${VNC_PASSWORD}
       TZ: ${TZ:-Europe/London}
     ports:
-      - "6080:6080"   # noVNC web (also proxied via Cloudflare vnc subdomain)
-      # native VNC 5900 intentionally NOT host-mapped: the prod host already has a
-      # process on :5900, and noVNC (6080) + the vnc.autocli Cloudflare route are the
-      # real access paths. Container still listens on 5900 internally for noVNC's websockify.
-      - "9222:9222"   # CDP (also proxied via Cloudflare cdp subdomain — strict Access)
+      # Both 6080 (noVNC) and 9222 (CDP) bound to loopback ONLY. Public access
+      # routes through Cloudflare Tunnel + Access (autocli-vnc.<zone> for noVNC,
+      # autocli-cdp.<zone> with mTLS for CDP per SPEC §5.3). Without 127.0.0.1
+      # binding, anyone with Tailscale or the host IP would have direct
+      # unauthenticated CDP / VNC access — bypassing every auth layer.
+      # If you need a backup path, use `ssh -L 6080:localhost:6080` from a
+      # Tailscale-connected machine.
+      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:9222:9222"
     volumes:
       - chrome-profile:/root/.config/chromium
       - chrome-tmp:/tmp
@@ -39,7 +43,6 @@ services:
         condition: service_healthy
     environment:
       TZ: ${TZ:-Europe/London}
-      CRON_SCHEDULE: ${CRON_SCHEDULE:-0 3 * * *}
       CHROME_HOST: autocli-chrome
       CHROME_PORT: "9222"
       API_RUN_TOKEN: ${API_RUN_TOKEN}

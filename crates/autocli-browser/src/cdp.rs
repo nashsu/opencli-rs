@@ -299,7 +299,12 @@ impl IPage for CdpPage {
     }
 
     async fn close(&self) -> Result<(), CliError> {
-        self.send_cdp("Browser.close", json!({})).await.ok();
+        // Intentional no-op: in CDP-direct mode (AUTOCLI_CDP_ENDPOINT) we attach
+        // to a SHARED Chrome. Sending Browser.close would kill the whole browser
+        // and every other CDP consumer (e.g. the sibling autocli-chrome
+        // container that owns Chrome's lifecycle). If a particular page target
+        // needs cleanup, callers should send Target.closeTarget with a specific
+        // targetId instead.
         Ok(())
     }
 
