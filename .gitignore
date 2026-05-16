@@ -17,3 +17,6 @@ __pycache__/
 .DS_Store
 .playwright-mcp/
 .serena/
+
+# Phase 0 local build output (CI downloads as artifact; never commit the binary)
+deploy/daily/bin/autocli
