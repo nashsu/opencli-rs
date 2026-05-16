@@ -31,6 +31,14 @@ impl BrowserBridge {
 
     /// Connect to the daemon, starting it if necessary, and return a trait-object page.
     pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
+        // CDP-direct path: bypass daemon + extension when AUTOCLI_CDP_ENDPOINT is set.
+        // Used by the autocli-daily microservice (deploy/SPEC.md §5.1).
+        if let Ok(endpoint) = std::env::var("AUTOCLI_CDP_ENDPOINT") {
+            if !endpoint.is_empty() {
+                let page = crate::CdpPage::connect(&endpoint).await?;
+                return Ok(Arc::new(page));
+            }
+        }
         Ok(self.connect_daemon_page().await?)
     }
 
@@ -61,7 +69,10 @@ impl BrowserBridge {
         }
 
         // Step 3: Wait up to 5s for extension to connect
-        if self.poll_extension(&client, EXTENSION_INITIAL_WAIT, false).await {
+        if self
+            .poll_extension(&client, EXTENSION_INITIAL_WAIT, false)
+            .await
+        {
             return Ok(Arc::new(DaemonPage::new(client, "default")));
         }
 
@@ -71,7 +82,10 @@ impl BrowserBridge {
         wake_chrome();
 
         // Step 5: Wait remaining 25s with progress
-        if self.poll_extension(&client, EXTENSION_REMAINING_WAIT, true).await {
+        if self
+            .poll_extension(&client, EXTENSION_REMAINING_WAIT, true)
+            .await
+        {
             return Ok(Arc::new(DaemonPage::new(client, "default")));
         }
 
@@ -242,5 +256,47 @@ mod tests {
     fn test_bridge_default_port() {
         let bridge = BrowserBridge::default_port();
         assert_eq!(bridge.port, DEFAULT_PORT);
+    }
+
+    #[tokio::test]
+    async fn test_connect_uses_cdp_endpoint_when_env_var_set() {
+        use autocli_core::CliError;
+        use std::env;
+
+        struct EnvGuard(&'static str);
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                env::remove_var(self.0);
+            }
+        }
+
+        // Set AUTOCLI_CDP_ENDPOINT to an unreachable endpoint. Use a RAII guard so
+        // the var is removed even on panic, preventing cross-test leakage.
+        let _guard = EnvGuard("AUTOCLI_CDP_ENDPOINT");
+        env::set_var("AUTOCLI_CDP_ENDPOINT", "ws://127.0.0.1:1/devtools/page/never");
+
+        let mut bridge = BrowserBridge::default_port();
+        let result = bridge.connect().await;
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("connect() should fail against an unreachable CDP endpoint"),
+        };
+
+        // Assert the CDP path was taken: the error MUST be BrowserConnect with a CDP-flavored
+        // message. (Asserting on the variant + message-contains is robust to wording changes
+        // in the daemon path, since that path produces a different message format.)
+        match &err {
+            CliError::BrowserConnect { message, .. } => {
+                assert!(
+                    message.contains("CDP") || message.contains("Failed to connect"),
+                    "BrowserConnect was raised but not from the CDP path. message: {message}"
+                );
+                assert!(
+                    !message.contains("Chrome is not running"),
+                    "BrowserConnect came from the daemon path — CDP env-var branch was not taken. message: {message}"
+                );
+            }
+            other => panic!("expected CliError::BrowserConnect, got: {other:?}"),
+        }
     }
 }

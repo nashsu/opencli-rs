@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 39,
+  "title": "AutoCLI Daily",
+  "uid": "autocli-daily",
+  "tags": ["autocli"],
+  "timezone": "Europe/London",
+  "refresh": "30s",
+  "time": {"from": "now-30d", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "stat",
+      "title": "Time since last run",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{"datasource": {"uid": "prom-autocli"}, "expr": "time() - autocli_daily_last_run_unixts"}],
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 90000}]}}}
+    },
+    {
+      "id": 2, "type": "stat",
+      "title": "Last exit code",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{"datasource": {"uid": "prom-autocli"}, "expr": "autocli_daily_last_exit_code"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "id": 3, "type": "stat",
+      "title": "Rows upserted today",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"datasource": {"uid": "prom-autocli"}, "expr": "increase(autocli_daily_rows_upserted_total[24h])"}]
+    },
+    {
+      "id": 4, "type": "stat",
+      "title": "Chrome CDP up (24h avg)",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{"datasource": {"uid": "prom-autocli"}, "expr": "avg_over_time(autocli_chrome_cdp_up[24h])"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "yellow", "value": 0.9}, {"color": "green", "value": 0.99}]}}}
+    },
+    {
+      "id": 5, "type": "timeseries",
+      "title": "Daily rows (scraped / upserted / skipped)",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 8},
+      "targets": [
+        {"datasource": {"uid": "prom-autocli"}, "expr": "increase(autocli_daily_rows_scraped_total[1d])", "legendFormat": "scraped"},
+        {"datasource": {"uid": "prom-autocli"}, "expr": "increase(autocli_daily_rows_upserted_total[1d])", "legendFormat": "upserted"},
+        {"datasource": {"uid": "prom-autocli"}, "expr": "increase(autocli_daily_rows_skipped_total[1d])", "legendFormat": "skipped"}
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries",
+      "title": "Run duration",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+      "targets": [{"datasource": {"uid": "prom-autocli"}, "expr": "autocli_daily_last_duration_seconds", "legendFormat": "duration (s)"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    }
+  ]
+}

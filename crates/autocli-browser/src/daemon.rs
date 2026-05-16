@@ -1,3 +1,4 @@
+use autocli_core::CliError;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -9,7 +10,6 @@ use axum::{
     Json, Router,
 };
 use futures::{SinkExt, StreamExt};
-use autocli_core::CliError;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -136,9 +136,7 @@ async fn health_handler() -> impl IntoResponse {
 
 /// POST /ai-generate — proxy AI request to autocli.ai with local token.
 /// Reads token from ~/.autocli/config.json, streams response back to caller.
-async fn ai_generate_proxy_handler(
-    body: axum::body::Bytes,
-) -> impl IntoResponse {
+async fn ai_generate_proxy_handler(body: axum::body::Bytes) -> impl IntoResponse {
     use axum::body::Body;
     use axum::http::Response;
 
@@ -146,14 +144,18 @@ async fn ai_generate_proxy_handler(
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    let config_path = std::path::PathBuf::from(&home).join(".autocli").join("config.json");
+    let config_path = std::path::PathBuf::from(&home)
+        .join(".autocli")
+        .join("config.json");
     let token = match std::fs::read_to_string(&config_path) {
-        Ok(content) => {
-            serde_json::from_str::<serde_json::Value>(&content)
-                .ok()
-                .and_then(|v| v.get("autocli-token").and_then(|t| t.as_str()).map(String::from))
-                .unwrap_or_default()
-        }
+        Ok(content) => serde_json::from_str::<serde_json::Value>(&content)
+            .ok()
+            .and_then(|v| {
+                v.get("autocli-token")
+                    .and_then(|t| t.as_str())
+                    .map(String::from)
+            })
+            .unwrap_or_default(),
         Err(_) => String::new(),
     };
 
@@ -161,14 +163,19 @@ async fn ai_generate_proxy_handler(
         return Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .header("Content-Type", "application/json")
-            .body(Body::from(r#"{"error":"No token configured. Run: autocli auth"}"#))
+            .body(Body::from(
+                r#"{"error":"No token configured. Run: autocli auth"}"#,
+            ))
             .unwrap();
     }
 
     // Determine API base
-    let api_base = std::env::var("AUTOCLI_API_BASE")
-        .unwrap_or_else(|_| "https://www.autocli.ai".to_string());
-    let url = format!("{}/api/ai/extension-generate", api_base.trim_end_matches('/'));
+    let api_base =
+        std::env::var("AUTOCLI_API_BASE").unwrap_or_else(|_| "https://www.autocli.ai".to_string());
+    let url = format!(
+        "{}/api/ai/extension-generate",
+        api_base.trim_end_matches('/')
+    );
 
     // Forward request to remote API
     let client = match reqwest::Client::builder()
@@ -203,7 +210,9 @@ async fn ai_generate_proxy_handler(
 
     // Stream the response back while buffering for save+upload
     let status = resp.status();
-    let content_type = resp.headers().get("content-type")
+    let content_type = resp
+        .headers()
+        .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
@@ -236,7 +245,12 @@ async fn ai_generate_proxy_handler(
                     let _ = tx.send(Ok(bytes)).await;
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))).await;
+                    let _ = tx
+                        .send(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e.to_string(),
+                        )))
+                        .await;
                     break;
                 }
             }
@@ -259,7 +273,9 @@ async fn ai_generate_proxy_handler(
         }
 
         // Upload to server
-        if let Err(e) = upload_adapter_to_server(&api_base_for_upload, &token_for_upload, &yaml_content).await {
+        if let Err(e) =
+            upload_adapter_to_server(&api_base_for_upload, &token_for_upload, &yaml_content).await
+        {
             tracing::warn!(error = %e, "Failed to upload adapter to server");
         }
     });
@@ -279,9 +295,12 @@ fn extract_yaml_from_response(text: &str) -> String {
     // Try SSE format: data: {"choices":[{"delta":{"content":"..."}}]}
     for line in text.lines() {
         if let Some(data) = line.strip_prefix("data: ") {
-            if data.trim() == "[DONE]" { continue; }
+            if data.trim() == "[DONE]" {
+                continue;
+            }
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                if let Some(delta) = parsed.get("choices")
+                if let Some(delta) = parsed
+                    .get("choices")
                     .and_then(|c| c.get(0))
                     .and_then(|c| c.get("delta"))
                     .and_then(|d| d.get("content"))
@@ -296,7 +315,8 @@ fn extract_yaml_from_response(text: &str) -> String {
     // If no SSE content, try JSON response format
     if content.is_empty() {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
-            if let Some(msg) = parsed.get("choices")
+            if let Some(msg) = parsed
+                .get("choices")
                 .and_then(|c| c.get(0))
                 .and_then(|c| c.get("message"))
                 .and_then(|m| m.get("content"))
@@ -312,33 +332,47 @@ fn extract_yaml_from_response(text: &str) -> String {
     while let Some(start) = cleaned.find("<think>") {
         if let Some(end) = cleaned.find("</think>") {
             cleaned = format!("{}{}", &cleaned[..start], &cleaned[end + 8..]);
-        } else { cleaned = cleaned[..start].to_string(); break; }
+        } else {
+            cleaned = cleaned[..start].to_string();
+            break;
+        }
     }
     while let Some(start) = cleaned.find("<thinking>") {
         if let Some(end) = cleaned.find("</thinking>") {
             cleaned = format!("{}{}", &cleaned[..start], &cleaned[end + 11..]);
-        } else { cleaned = cleaned[..start].to_string(); break; }
+        } else {
+            cleaned = cleaned[..start].to_string();
+            break;
+        }
     }
     let trimmed = cleaned.trim();
-    let trimmed = trimmed.strip_prefix("```yaml").or_else(|| trimmed.strip_prefix("```")).unwrap_or(trimmed);
+    let trimmed = trimmed
+        .strip_prefix("```yaml")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed);
     let trimmed = trimmed.strip_suffix("```").unwrap_or(trimmed);
     trimmed.trim().to_string()
 }
 
 /// Save adapter YAML to ~/.autocli/adapters/{site}/{name}.yaml
 fn save_adapter_locally(home: &str, yaml: &str) -> Result<(), String> {
-    let site = yaml.lines()
+    let site = yaml
+        .lines()
         .find(|l| l.starts_with("site:"))
         .and_then(|l| l.strip_prefix("site:"))
         .map(|s| s.trim().trim_matches('"').to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    let name = yaml.lines()
+    let name = yaml
+        .lines()
         .find(|l| l.starts_with("name:"))
         .and_then(|l| l.strip_prefix("name:"))
         .map(|s| s.trim().trim_matches('"').to_string())
         .unwrap_or_else(|| "default".to_string());
 
-    let dir = std::path::PathBuf::from(home).join(".autocli").join("adapters").join(&site);
+    let dir = std::path::PathBuf::from(home)
+        .join(".autocli")
+        .join("adapters")
+        .join(&site);
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
     let path = dir.join(format!("{}.yaml", name));
     std::fs::write(&path, yaml).map_err(|e| format!("write: {}", e))?;
@@ -415,7 +449,11 @@ async fn command_handler(
 
     // Create a oneshot channel for the result
     let (tx, rx) = oneshot::channel::<DaemonResult>();
-    state.pending_commands.write().await.insert(cmd_id.clone(), tx);
+    state
+        .pending_commands
+        .write()
+        .await
+        .insert(cmd_id.clone(), tx);
 
     // Forward command to extension via WebSocket
     {
@@ -446,7 +484,10 @@ async fn command_handler(
             } else {
                 StatusCode::UNPROCESSABLE_ENTITY
             };
-            (status, Json(serde_json::to_value(result).unwrap_or(json!({}))))
+            (
+                status,
+                Json(serde_json::to_value(result).unwrap_or(json!({}))),
+            )
         }
         Ok(Err(_)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -510,7 +551,11 @@ async fn handle_extension_ws(state: Arc<DaemonState>, socket: WebSocket) {
                         continue;
                     }
                     if msg_type == "ai-generate" {
-                        let stream_id = parsed.get("streamId").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                        let stream_id = parsed
+                            .get("streamId")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         let state_clone = state.clone();
                         let body_json = parsed.clone();
                         tokio::spawn(async move {
@@ -566,7 +611,11 @@ async fn handle_extension_ws(state: Arc<DaemonState>, socket: WebSocket) {
 }
 
 // ─── AI Stream via existing extension WS ────────────────────────
-async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, body: serde_json::Value) {
+async fn handle_ai_stream_via_ws(
+    state: Arc<DaemonState>,
+    stream_id: String,
+    body: serde_json::Value,
+) {
     // Helper to send message back through extension WS
     async fn send_ws(state: &Arc<DaemonState>, msg: serde_json::Value) {
         let mut tx = state.extension_tx.lock().await;
@@ -579,33 +628,57 @@ async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, bod
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    let config_path = std::path::PathBuf::from(&home).join(".autocli").join("config.json");
+    let config_path = std::path::PathBuf::from(&home)
+        .join(".autocli")
+        .join("config.json");
     let token = std::fs::read_to_string(&config_path)
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-        .and_then(|v| v.get("autocli-token").and_then(|t| t.as_str()).map(String::from))
+        .and_then(|v| {
+            v.get("autocli-token")
+                .and_then(|t| t.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default();
 
     if token.is_empty() {
-        send_ws(&state, json!({ "type": "ai-stream-error", "streamId": stream_id, "error": "No token" })).await;
+        send_ws(
+            &state,
+            json!({ "type": "ai-stream-error", "streamId": stream_id, "error": "No token" }),
+        )
+        .await;
         return;
     }
 
-    let api_base = std::env::var("AUTOCLI_API_BASE")
-        .unwrap_or_else(|_| "https://www.autocli.ai".to_string());
-    let url = format!("{}/api/ai/extension-generate", api_base.trim_end_matches('/'));
+    let api_base =
+        std::env::var("AUTOCLI_API_BASE").unwrap_or_else(|_| "https://www.autocli.ai".to_string());
+    let url = format!(
+        "{}/api/ai/extension-generate",
+        api_base.trim_end_matches('/')
+    );
 
     // Build request body from the message
-    let is_private = body.get("body").and_then(|b| b.get("private")).and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_private = body
+        .get("body")
+        .and_then(|b| b.get("private"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let request_body = json!({
         "captured_data": body.get("body").and_then(|b| b.get("captured_data")).cloned().unwrap_or(json!(null)),
         "stream": true,
     });
 
-    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(300)).build() {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+    {
         Ok(c) => c,
         Err(e) => {
-            send_ws(&state, json!({ "type": "ai-stream-error", "streamId": stream_id, "error": e.to_string() })).await;
+            send_ws(
+                &state,
+                json!({ "type": "ai-stream-error", "streamId": stream_id, "error": e.to_string() }),
+            )
+            .await;
             return;
         }
     };
@@ -620,7 +693,11 @@ async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, bod
     {
         Ok(r) => r,
         Err(e) => {
-            send_ws(&state, json!({ "type": "ai-stream-error", "streamId": stream_id, "error": e.to_string() })).await;
+            send_ws(
+                &state,
+                json!({ "type": "ai-stream-error", "streamId": stream_id, "error": e.to_string() }),
+            )
+            .await;
             return;
         }
     };
@@ -637,11 +714,19 @@ async fn handle_ai_stream_via_ws(state: Arc<DaemonState>, stream_id: String, bod
     while let Some(chunk) = resp.chunk().await.unwrap_or(None) {
         all_bytes.extend_from_slice(&chunk);
         if let Ok(text) = std::str::from_utf8(&chunk) {
-            send_ws(&state, json!({ "type": "ai-stream-chunk", "streamId": stream_id, "data": text })).await;
+            send_ws(
+                &state,
+                json!({ "type": "ai-stream-chunk", "streamId": stream_id, "data": text }),
+            )
+            .await;
         }
     }
 
-    send_ws(&state, json!({ "type": "ai-stream-done", "streamId": stream_id })).await;
+    send_ws(
+        &state,
+        json!({ "type": "ai-stream-done", "streamId": stream_id }),
+    )
+    .await;
 
     // Post-processing: save + upload
     let full_text = String::from_utf8_lossy(&all_bytes).to_string();
@@ -665,33 +750,55 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
     // Wait for client message with request body
     let request_body = match socket.recv().await {
         Some(Ok(Message::Text(text))) => text,
-        _ => { let _ = socket.close().await; return; }
+        _ => {
+            let _ = socket.close().await;
+            return;
+        }
     };
 
     // Read token
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    let config_path = std::path::PathBuf::from(&home).join(".autocli").join("config.json");
+    let config_path = std::path::PathBuf::from(&home)
+        .join(".autocli")
+        .join("config.json");
     let token = std::fs::read_to_string(&config_path)
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-        .and_then(|v| v.get("autocli-token").and_then(|t| t.as_str()).map(String::from))
+        .and_then(|v| {
+            v.get("autocli-token")
+                .and_then(|t| t.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default();
 
     if token.is_empty() {
-        let _ = socket.send(Message::Text("data: {\"error\":\"No token configured\"}\n\n".into())).await;
+        let _ = socket
+            .send(Message::Text(
+                "data: {\"error\":\"No token configured\"}\n\n".into(),
+            ))
+            .await;
         let _ = socket.close().await;
         return;
     }
 
-    let api_base = std::env::var("AUTOCLI_API_BASE")
-        .unwrap_or_else(|_| "https://www.autocli.ai".to_string());
-    let url = format!("{}/api/ai/extension-generate", api_base.trim_end_matches('/'));
+    let api_base =
+        std::env::var("AUTOCLI_API_BASE").unwrap_or_else(|_| "https://www.autocli.ai".to_string());
+    let url = format!(
+        "{}/api/ai/extension-generate",
+        api_base.trim_end_matches('/')
+    );
 
-    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(300)).build() {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+    {
         Ok(c) => c,
-        Err(_) => { let _ = socket.close().await; return; }
+        Err(_) => {
+            let _ = socket.close().await;
+            return;
+        }
     };
 
     let mut resp = match client
@@ -704,7 +811,11 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
     {
         Ok(r) => r,
         Err(e) => {
-            let _ = socket.send(Message::Text(format!("data: {{\"error\":\"{}\"}}\n\n", e).into())).await;
+            let _ = socket
+                .send(Message::Text(
+                    format!("data: {{\"error\":\"{}\"}}\n\n", e).into(),
+                ))
+                .await;
             let _ = socket.close().await;
             return;
         }
@@ -713,8 +824,20 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
-        let err_body = body.replace('"', "\\\"").chars().take(200).collect::<String>();
-        let _ = socket.send(Message::Text(format!("data: {{\"error\":\"{}: {}\"}}\n\nstatus: {}", status, err_body, status).into())).await;
+        let err_body = body
+            .replace('"', "\\\"")
+            .chars()
+            .take(200)
+            .collect::<String>();
+        let _ = socket
+            .send(Message::Text(
+                format!(
+                    "data: {{\"error\":\"{}: {}\"}}\n\nstatus: {}",
+                    status, err_body, status
+                )
+                .into(),
+            ))
+            .await;
         let _ = socket.close().await;
 
         // Don't save/upload on error
@@ -729,7 +852,12 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
     let mut chunk_count = 0u32;
     while let Some(chunk) = resp.chunk().await.unwrap_or(None) {
         chunk_count += 1;
-        tracing::debug!(chunk_count, size = chunk.len(), elapsed_ms = stream_start.elapsed().as_millis() as u64, "AI stream chunk received");
+        tracing::debug!(
+            chunk_count,
+            size = chunk.len(),
+            elapsed_ms = stream_start.elapsed().as_millis() as u64,
+            "AI stream chunk received"
+        );
         all_bytes.extend_from_slice(&chunk);
         if let Ok(text) = std::str::from_utf8(&chunk) {
             line_buffer.push_str(text);
@@ -740,7 +868,12 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
             }
         }
     }
-    tracing::debug!(total_chunks = chunk_count, total_bytes = all_bytes.len(), total_ms = stream_start.elapsed().as_millis() as u64, "AI stream complete");
+    tracing::debug!(
+        total_chunks = chunk_count,
+        total_bytes = all_bytes.len(),
+        total_ms = stream_start.elapsed().as_millis() as u64,
+        "AI stream complete"
+    );
     if !line_buffer.is_empty() {
         let _ = socket.send(Message::Text(line_buffer.into())).await;
     }
@@ -758,31 +891,34 @@ async fn handle_ai_stream_socket(mut socket: WebSocket) {
 
 /// Compare semver: returns true if `latest` is newer than `current`.
 fn is_newer_version(latest: &str, current: &str) -> bool {
-    let parse = |v: &str| -> Vec<u32> {
-        v.split('.').filter_map(|s| s.parse().ok()).collect()
-    };
+    let parse = |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse().ok()).collect() };
     let l = parse(latest);
     let c = parse(current);
     for i in 0..3 {
         let lv = l.get(i).copied().unwrap_or(0);
         let cv = c.get(i).copied().unwrap_or(0);
-        if lv > cv { return true; }
-        if lv < cv { return false; }
+        if lv > cv {
+            return true;
+        }
+        if lv < cv {
+            return false;
+        }
     }
     false
 }
 
 // ─── Update check ───────────────────────────────────────────────
 
-static CACHED_UPDATE: std::sync::OnceLock<tokio::sync::RwLock<Option<serde_json::Value>>> = std::sync::OnceLock::new();
+static CACHED_UPDATE: std::sync::OnceLock<tokio::sync::RwLock<Option<serde_json::Value>>> =
+    std::sync::OnceLock::new();
 
 fn update_cache() -> &'static tokio::sync::RwLock<Option<serde_json::Value>> {
     CACHED_UPDATE.get_or_init(|| tokio::sync::RwLock::new(None))
 }
 
 async fn check_and_cache_update() {
-    let api_base = std::env::var("AUTOCLI_API_BASE")
-        .unwrap_or_else(|_| "https://www.autocli.ai".to_string());
+    let api_base =
+        std::env::var("AUTOCLI_API_BASE").unwrap_or_else(|_| "https://www.autocli.ai".to_string());
     let url = format!("{}/api/version/latest", api_base.trim_end_matches('/'));
 
     let client = match reqwest::Client::builder()
@@ -823,11 +959,14 @@ async fn check_update_handler() -> impl IntoResponse {
     let cache = update_cache().read().await;
     match &*cache {
         Some(data) => (StatusCode::OK, Json(data.clone())),
-        None => (StatusCode::OK, Json(json!({
-            "current_version": env!("CARGO_PKG_VERSION"),
-            "latest_version": "",
-            "update_available": false,
-        }))),
+        None => (
+            StatusCode::OK,
+            Json(json!({
+                "current_version": env!("CARGO_PKG_VERSION"),
+                "latest_version": "",
+                "update_available": false,
+            })),
+        ),
     }
 }
 

@@ -1,0 +1,10 @@
+# supercronic crontab — runs in container TZ=Europe/London.
+#
+# NOTE: supercronic reads this file verbatim. Shell-style env expansion
+# (${CRON_SCHEDULE}, ${OUTPUT_RETENTION_DAYS}) does NOT happen here.
+# Earlier comments suggested those env vars were honored — they were not,
+# so the env-knobs are dropped from the compose to stop being misleading.
+# To change the schedule or retention, edit THIS file (or render it from
+# a template in entrypoint.sh before launching supercronic).
+0 3 * * * /app/run-daily.sh
+0 4 * * * find /data/output -name "*.json" -type f -mtime +30 -delete
