@@ -156,16 +156,24 @@ def api_logs(_: Annotated[bool, Depends(require_bearer)], lines: int = Query(200
 
 @app.get("/jobs")
 def jobs(_: Annotated[bool, Depends(require_bearer)],
-         since: str = Query(..., description="ISO date, e.g. 2026-05-15")):
-    # Lazy import — supabase client takes ~100ms to construct
+         since: str = Query(..., description="ISO date — rows added (created_at) on or after this date")):
+    # Lazy import — supabase client takes ~100ms to construct.
+    # Uses SUPABASE_ANON_KEY (a real anon JWT, not service-role) so RLS on
+    # jobs.jobs is actually enforced. Policy `anon_read_jobs_jobs` (see
+    # supabase/migrations/20260516120100_enable_jobs_jobs_rls.sql) grants
+    # SELECT-only to anon/authenticated.
     from supabase import create_client
     client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    # Filter on created_at (database insert time), NOT post_time (LinkedIn's
+    # original posting date — often days/weeks old for fresh scrapes). Callers
+    # asking "jobs added since X" expect ingestion time. Order by created_at
+    # newest first so the freshest scrapes surface.
     res = (
         client.schema("jobs")
               .table("jobs")
-              .select("id, job_title, company_name, location, salary, post_time, apply_url, priority_score")
-              .gte("post_time", since)
-              .order("post_time", desc=True)
+              .select("id, job_title, company_name, location, salary, post_time, apply_url, priority_score, created_at")
+              .gte("created_at", since)
+              .order("created_at", desc=True)
               .limit(500)
               .execute()
     )
