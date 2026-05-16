@@ -31,6 +31,14 @@ impl BrowserBridge {
 
     /// Connect to the daemon, starting it if necessary, and return a trait-object page.
     pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
+        // CDP-direct path: bypass daemon + extension when AUTOCLI_CDP_ENDPOINT is set.
+        // Used by the autocli-daily microservice (deploy/SPEC.md §5.1).
+        if let Ok(endpoint) = std::env::var("AUTOCLI_CDP_ENDPOINT") {
+            if !endpoint.is_empty() {
+                let page = crate::CdpPage::connect(&endpoint).await?;
+                return Ok(Arc::new(page));
+            }
+        }
         Ok(self.connect_daemon_page().await?)
     }
 
@@ -61,7 +69,10 @@ impl BrowserBridge {
         }
 
         // Step 3: Wait up to 5s for extension to connect
-        if self.poll_extension(&client, EXTENSION_INITIAL_WAIT, false).await {
+        if self
+            .poll_extension(&client, EXTENSION_INITIAL_WAIT, false)
+            .await
+        {
             return Ok(Arc::new(DaemonPage::new(client, "default")));
         }
 
@@ -71,7 +82,10 @@ impl BrowserBridge {
         wake_chrome();
 
         // Step 5: Wait remaining 25s with progress
-        if self.poll_extension(&client, EXTENSION_REMAINING_WAIT, true).await {
+        if self
+            .poll_extension(&client, EXTENSION_REMAINING_WAIT, true)
+            .await
+        {
             return Ok(Arc::new(DaemonPage::new(client, "default")));
         }
 
@@ -242,5 +256,32 @@ mod tests {
     fn test_bridge_default_port() {
         let bridge = BrowserBridge::default_port();
         assert_eq!(bridge.port, DEFAULT_PORT);
+    }
+
+    #[tokio::test]
+    async fn test_connect_uses_cdp_endpoint_when_env_var_set() {
+        use std::env;
+
+        env::set_var(
+            "AUTOCLI_CDP_ENDPOINT",
+            "ws://127.0.0.1:1/devtools/page/never",
+        );
+        let mut bridge = BrowserBridge::default_port();
+        let result = bridge.connect().await;
+        env::remove_var("AUTOCLI_CDP_ENDPOINT");
+
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("connect() should fail against an unreachable CDP endpoint"),
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Failed to connect to CDP endpoint") || msg.contains("CDP"),
+            "expected CDP-path error, got: {msg}"
+        );
+        assert!(
+            !msg.contains("Chrome is not running"),
+            "got daemon-path error — CDP env-var branch was not taken: {msg}"
+        );
     }
 }
